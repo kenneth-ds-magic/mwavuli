@@ -1,0 +1,134 @@
+# Local/dev stack: Postgres/PostGIS + Redis + MinIO + API + workers.
+# From repo root:  docker compose -f infra/docker-compose.yml up --build
+#
+# Host port map (avoids common server clashes: system Postgres 5432, Redis 6379):
+#   API 8080→8080 | Adminer 8081→8080 | Postgres 5433→5432 | Redis 6380→6379
+#   MinIO API 9000→9000 | MinIO console 9001→9001
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mwavuli
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5433:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mwavuli"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6380:6379"]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin 2>/dev/null; do sleep 1; done;
+      mc mb local/mwavuli-uploads-private --ignore-existing;
+      mc mb local/mwavuli-public --ignore-existing;
+      mc anonymous set download local/mwavuli-public;
+      echo 'MinIO buckets ready';
+      "
+
+  migrate:
+    build: ../api
+    restart: "no"
+    command:
+      [
+        "sh",
+        "-c",
+        "i=0; until npx tsx scripts/migrate.ts; do i=$$((i+1)); if [ $$i -ge 15 ]; then exit 1; fi; echo \"migrate: waiting for db ($$i)…\"; sleep 2; done",
+      ]
+    environment:
+      MIGRATE_DATABASE_URL: postgres://postgres:postgres@db:5432/mwavuli
+      MIGRATIONS_DIR: /db/migrations
+    volumes: ["../db:/db:ro"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ../api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      DATABASE_URL: postgres://mwavuli_app:change-me-in-prod@db:5432/mwavuli
+      JWT_SECRET: dev-secret-change-me-please-32chars
+      CORS_ORIGIN: "*"
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_UPLOADS: mwavuli-uploads-private
+      S3_BUCKET_PUBLIC: mwavuli-public
+      S3_PUBLIC_BASE_URL: http://localhost:9000/mwavuli-public
+      VERIFY_VOTES_REQUIRED: "2"
+    ports: ["8080:8080"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+
+  image-worker:
+    build: ../api
+    restart: unless-stopped
+    command: ["npx", "tsx", "scripts/image-worker.ts", "--loop"]
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/mwavuli
+      MIGRATE_DATABASE_URL: postgres://postgres:postgres@db:5432/mwavuli
+      JWT_SECRET: dev-secret-change-me-please-32chars
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_UPLOADS: mwavuli-uploads-private
+      S3_BUCKET_PUBLIC: mwavuli-public
+      S3_PUBLIC_BASE_URL: http://localhost:9000/mwavuli-public
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+  worker:
+    build: ../api
+    restart: unless-stopped
+    command: ["npx", "tsx", "scripts/worker.ts", "--loop"]
+    environment:
+      MIGRATE_DATABASE_URL: postgres://postgres:postgres@db:5432/mwavuli
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports: ["8081:8080"]
+    depends_on: [db]
+
+volumes:
+  pgdata:
+  miniodata:

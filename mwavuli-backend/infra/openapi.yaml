@@ -1,0 +1,142 @@
+openapi: 3.1.0
+info:
+  title: mwavuli API
+  version: "0.1.0"
+  description: >
+    Tree identification, mapping, and community backend. Public endpoints expose
+    only fuzzy locations; exact coordinates require ownership/staff and are
+    audited.
+servers:
+  - url: https://api.mwavuli.app
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    LatLng:
+      type: object
+      properties: { lat: { type: number }, lng: { type: number } }
+    Tree:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contributor: { type: string }
+        commonName: { type: string }
+        scientificName: { type: string, nullable: true }
+        heightM: { type: number, nullable: true }
+        girthM: { type: number, nullable: true }
+        ageEstimate: { type: string, nullable: true }
+        health: { type: string, enum: [healthy, stressed, dead, unknown] }
+        features: { type: array, items: { type: string } }
+        confidence: { type: integer, nullable: true }
+        verified: { type: boolean }
+        visibility: { type: string, enum: [public, followers, private] }
+        isFuzzy: { type: boolean }
+        likeCount: { type: integer }
+        commentCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        fuzzyLocation: { $ref: '#/components/schemas/LatLng', nullable: true }
+    Error:
+      type: object
+      properties: { error: { type: string }, message: { type: string } }
+paths:
+  /health:
+    get: { summary: Liveness + DB check, security: [], responses: { '200': { description: ok } } }
+
+  /v1/auth/register:
+    post:
+      summary: Create an account (13+ / COPPA gate)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, username, password, displayName, birthYear, acceptTos]
+              properties:
+                email: { type: string, format: email }
+                username: { type: string }
+                password: { type: string, minLength: 8 }
+                displayName: { type: string }
+                birthYear: { type: integer }
+                acceptTos: { type: boolean, enum: [true] }
+      responses:
+        '200': { description: user + tokens }
+        '400': { description: under 13 / invalid, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: email/username taken }
+  /v1/auth/login:
+    post: { summary: Log in, security: [], responses: { '200': { description: user + tokens } } }
+  /v1/auth/refresh:
+    post: { summary: Rotate refresh token, security: [], responses: { '200': { description: new tokens } } }
+  /v1/auth/logout:
+    post: { summary: Revoke a refresh token, security: [], responses: { '200': { description: ok } } }
+
+  /v1/feed:
+    get:
+      summary: Public feed (optionally within a map bbox)
+      security: []
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: before, in: query, schema: { type: string, format: date-time } }
+        - { name: bbox, in: query, description: "minLng,minLat,maxLng,maxLat", schema: { type: string } }
+      responses:
+        '200':
+          description: items
+          content:
+            application/json:
+              schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Tree' } } } }
+  /v1/trees:
+    post: { summary: Log a tree (+ presigned photo uploads), responses: { '200': { description: tree + uploads } } }
+  /v1/trees/{id}:
+    get: { summary: Tree detail + processed photos, security: [], responses: { '200': { description: tree } } }
+    delete: { summary: Soft-delete (owner/staff), responses: { '200': { description: ok } } }
+  /v1/trees/{id}/exact-location:
+    get:
+      summary: Exact coordinates — owner/staff only, AUDITED
+      responses:
+        '200': { description: lat/lng/accuracy }
+        '403': { description: not permitted }
+  /v1/trees/{id}/like:
+    post: { summary: Like, responses: { '200': { description: likeCount } } }
+    delete: { summary: Unlike, responses: { '200': { description: likeCount } } }
+
+  /v1/identify:
+    post: { summary: Identify from image URLs (Pl@ntNet/iNaturalist), responses: { '200': { description: candidates } } }
+
+  /v1/trees/{id}/comments:
+    get: { summary: List comments, security: [], responses: { '200': { description: items } } }
+    post: { summary: Add comment, responses: { '200': { description: comment } } }
+  /v1/comments/{id}:
+    delete: { summary: Delete comment (author/staff), responses: { '200': { description: ok } } }
+
+  /v1/users/{id}/follow:
+    post: { summary: Follow, responses: { '200': { description: ok } } }
+    delete: { summary: Unfollow, responses: { '200': { description: ok } } }
+  /v1/leaderboard:
+    get: { summary: Weekly leaderboard, security: [], responses: { '200': { description: items } } }
+  /v1/activity:
+    get: { summary: Recent community activity, security: [], responses: { '200': { description: items } } }
+
+  /v1/me:
+    get: { summary: Own profile + stats + badges, responses: { '200': { description: profile } } }
+    patch: { summary: Update display name, bio, and location label, responses: { '200': { description: profile } } }
+  /v1/me/export:
+    post:
+      summary: GDPR data export (JSON/CSV)
+      parameters: [ { name: format, in: query, schema: { type: string, enum: [json, csv], default: json } } ]
+      responses: { '200': { description: export archive } }
+  /v1/me/deletion:
+    post: { summary: Schedule account erasure (30-day grace), responses: { '200': { description: scheduled } } }
+    delete: { summary: Cancel scheduled erasure, responses: { '200': { description: ok } } }
+
+  /v1/reports:
+    post: { summary: Report a tree/comment/user, responses: { '200': { description: report } } }
+  /v1/admin/metrics:
+    get: { summary: Moderation metrics (staff), responses: { '200': { description: metrics } } }
+  /v1/admin/reports:
+    get: { summary: List reports by status (staff), responses: { '200': { description: items } } }
+  /v1/admin/reports/{id}/resolve:
+    post: { summary: Apply a moderation action (staff), responses: { '200': { description: ok } } }

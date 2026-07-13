@@ -1,0 +1,38 @@
+{
+  "name": "mwavuli-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mwavuli REST API — Fastify + PostgreSQL/PostGIS",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_ENV=test node --import tsx --test test/unit/*.test.ts test/integration/*.test.ts",
+    "test:unit": "NODE_ENV=test node --import tsx --test test/unit/*.test.ts",
+    "test:integration": "NODE_ENV=test node --import tsx --test test/integration/*.test.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "create-admin": "tsx scripts/create-admin.ts",
+    "worker": "tsx scripts/worker.ts",
+    "image-worker": "tsx scripts/image-worker.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "fastify": "^4.28.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0",
+    "sharp": "^0.33.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

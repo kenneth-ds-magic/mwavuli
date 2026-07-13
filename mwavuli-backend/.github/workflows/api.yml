@@ -1,0 +1,51 @@
+name: api
+
+on:
+  push:
+    paths: ['api/**', 'db/**', 'serverless/**', '.github/workflows/api.yml']
+  pull_request:
+    paths: ['api/**', 'db/**', 'serverless/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: mwavuli
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mwavuli"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      MIGRATE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/mwavuli
+      DATABASE_URL: postgres://mwavuli_app:change-me-in-prod@localhost:5432/mwavuli
+      JWT_SECRET: ci-secret-0123456789abcdef
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run migrate          # creates extensions, schema, app role, RLS
+      - run: npm test                 # unit + integration (Fastify inject + PostGIS)
+
+  pipeline-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless/image-pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck

@@ -1,0 +1,23 @@
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Secrets — never commit
+.env
+*.env
+!.env.example
+
+# Node (backend)
+node_modules/
+dist/
+*.log
+.aws-sam/
+
+# Flutter / Dart (mobile)
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies

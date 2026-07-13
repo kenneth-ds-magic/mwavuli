@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mwavuli — moderation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Roboto+Slab:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --green-900:#14300d; --green-800:#1f4715; --green-700:#2f6a21; --green-600:#3c7d2b;
+  --green-100:#dcecd3; --green-50:#eef6e9;
+  --brown-600:#7a542f; --gold-600:#b8860b; --gold-100:#f7ecc9;
+  --danger:#a5341f; --danger-bg:#f6e0da; --warn:#b8860b;
+  --cream:#faf7ef; --surface:#fff; --ink:#241d14; --ink2:#4f4536; --ink3:#77694f;
+  --line:rgba(58,45,28,.14); --shadow:0 1px 3px rgba(42,33,24,.1);
+  --c1:#2f6a21;--c2:#7a542f;--c3:#b8860b;--c4:#4c9138;--c5:#9a6c3f;--c6:#5c7d8a;--c7:#3c7d2b;
+  --font:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+  --slab:'Roboto Slab',Georgia,serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5}
+:focus-visible{outline:3px solid var(--gold-600);outline-offset:2px}
+header{background:linear-gradient(120deg,var(--green-700),var(--green-900));color:#fff;padding:16px 24px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header .logo{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.14);display:grid;place-items:center}
+header .logo svg{width:22px;height:22px}
+header h1{font-family:var(--slab);font-size:19px;margin:0;font-weight:700}
+header .tag{font-size:12px;opacity:.85;font-weight:500}
+header .conn{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header input{border:none;border-radius:9px;padding:8px 11px;font-size:12.5px;font-family:inherit;min-width:150px}
+header button{border:none;border-radius:9px;padding:9px 15px;font-weight:700;font-size:12.5px;cursor:pointer;
+  background:var(--gold-600);color:#3a2c05}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 24px 60px}
+.banner{background:var(--gold-100);border:1px solid #e9d9a3;color:#6b5307;border-radius:12px;padding:10px 14px;
+  font-size:13px;margin-bottom:18px;display:flex;gap:9px;align-items:center}
+.banner.hide{display:none}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;box-shadow:var(--shadow)}
+.tile .v{font-family:var(--slab);font-size:26px;color:var(--green-800);line-height:1}
+.tile .k{font-size:11.5px;color:var(--ink3);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.tile.alert .v{color:var(--danger)}
+.grid{display:grid;grid-template-columns:1.6fr 1fr;gap:20px;align-items:start}
+@media(max-width:820px){.grid{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.card h2{font-family:var(--slab);font-size:15px;margin:0;padding:15px 18px;border-bottom:1px solid var(--line);color:var(--green-900)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:11px 14px;font-size:13px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);font-weight:700;background:#fbf8f0}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.b-tree{background:var(--green-100);color:var(--green-800)}
+.b-comment{background:#efe2cf;color:var(--brown-600)}
+.b-user{background:#e2e8ea;color:var(--c6)}
+.reason{font-weight:600}
+.muted{color:var(--ink3);font-size:12px}
+.card-h{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h .ttl{font-family:var(--slab);font-size:15px;color:var(--green-900);font-weight:700}
+.bulk{margin-left:auto;display:flex;align-items:center;gap:8px}
+.bulk .count{font-size:12px;color:var(--ink3);font-weight:700;margin-right:2px;min-width:66px;text-align:right}
+.bulk button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;font-size:12px;
+  font-weight:700;cursor:pointer;color:var(--ink2)}
+.bulk button:disabled{opacity:.45;cursor:not-allowed}
+.bulk button.b-hide:not(:disabled):hover{border-color:var(--warn);color:var(--warn)}
+.bulk button.b-remove:not(:disabled):hover{border-color:var(--danger);color:var(--danger)}
+.bulk button.b-dismiss:not(:disabled):hover{border-color:var(--green-600);color:var(--green-700)}
+th.chk,td.chk{width:34px;text-align:center;padding-left:14px;padding-right:0}
+.rowchk,.allchk{width:16px;height:16px;accent-color:var(--green-700);cursor:pointer}
+.reasons{padding:8px 18px 16px}
+.rrow{display:flex;align-items:center;gap:10px;margin:9px 0}
+.rrow .rk{width:120px;font-size:12px;color:var(--ink2);font-weight:600;flex:none;text-transform:capitalize}
+.rrow .track{flex:1;height:12px;background:#f1ead9;border-radius:99px;overflow:hidden}
+.rrow .track i{display:block;height:100%;border-radius:99px}
+.rrow .n{width:22px;text-align:right;font-weight:800;font-size:12px}
+.empty{padding:40px;text-align:center;color:var(--ink3)}
+footer{max-width:1080px;margin:0 auto;padding:0 24px 40px;color:var(--ink3);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#eaf6df" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-6"/><path d="M12 16c-4 0-6.5-2.6-6.5-6C5.5 6.4 8.4 3.5 12 3.5s6.5 2.9 6.5 6.5c0 3.4-2.5 6-6.5 6Z"/></svg></div>
+  <div>
+    <h1>mwavuli · moderation</h1>
+    <div class="tag">review reported entries &amp; act</div>
+  </div>
+  <div class="conn">
+    <input id="api" placeholder="API base (https://api.mwavuli.app)" value="http://localhost:8080">
+    <input id="token" type="password" placeholder="Admin bearer token">
+    <button onclick="connect()">Connect</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="banner">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <span>Showing <b>preview data</b> — enter an API base + admin token above and press Connect for live moderation.</span>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-h">
+        <span class="ttl">Open reports</span>
+        <div class="bulk">
+          <span class="count" id="selCount">0 selected</span>
+          <button class="b-hide" id="bHide" onclick="bulk('hide')" disabled>Hide</button>
+          <button class="b-remove" id="bRemove" onclick="bulk('remove')" disabled>Remove</button>
+          <button class="b-dismiss" id="bDismiss" onclick="bulk('dismiss')" disabled>Dismiss</button>
+        </div>
+      </div>
+      <div id="reports"></div>
+    </div>
+    <div class="card">
+      <h2>Reports by reason</h2>
+      <div class="reasons" id="reasons"></div>
+    </div>
+  </div>
+</div>
+<footer>Actions call <code>POST /v1/admin/reports/:id/resolve</code>. Every action is written to the audit log. Staff role required.</footer>
+
+<script>
+var API = '', TOKEN = '', LIVE = false;
+var SEL = new Set();
+var CAT = ['--c1','--c2','--c3','--c4','--c5','--c6','--c7'];
+
+// ---- demo data (used until connected to a live API) ----
+var DEMO_METRICS = { open_reports: 7, trees: 4812, users: 1268, trees_week: 143, pending_deletions: 2 };
+var DEMO_REPORTS = [
+  { id:'r1', target_type:'tree', target_id:'t-1029', reason:'wrong_location', details:'Pin is ~2km off; likely a GPS glitch.', reporter:'angela_r', created_at:'2026-07-08T12:40:00Z' },
+  { id:'r2', target_type:'comment', target_id:'c-88', reason:'offensive', details:'Abusive language toward another member.', reporter:'dev_p', created_at:'2026-07-08T11:15:00Z' },
+  { id:'r3', target_type:'tree', target_id:'t-1188', reason:'sensitive_species', details:'Rare orchid-adjacent tree — exact spot should be fuzzed.', reporter:'lena_k', created_at:'2026-07-08T09:02:00Z' },
+  { id:'r4', target_type:'tree', target_id:'t-1201', reason:'inaccurate_id', details:'Labelled Sugar Maple, looks like Norway Maple.', reporter:'marco_t', created_at:'2026-07-07T22:30:00Z' },
+  { id:'r5', target_type:'user', target_id:'u-55', reason:'spam', details:'Posting promotional links in comments.', reporter:'priya_n', created_at:'2026-07-07T18:10:00Z' },
+  { id:'r6', target_type:'tree', target_id:'t-1250', reason:'wrong_location', details:'Duplicate of an existing pin nearby.', reporter:'sam_o', created_at:'2026-07-07T14:05:00Z' },
+  { id:'r7', target_type:'comment', target_id:'c-91', reason:'spam', details:'Repeated identical comments.', reporter:'angela_r', created_at:'2026-07-07T08:44:00Z' }
+];
+
+function h(tag, attrs, html){ var e=document.createElement(tag); if(attrs) for(var k in attrs) e.setAttribute(k,attrs[k]); if(html!=null) e.innerHTML=html; return e; }
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function timeAgo(iso){ var s=(Date.parse('2026-07-08T13:00:00Z')-Date.parse(iso))/1000; if(s<3600) return Math.round(s/60)+'m ago'; if(s<86400) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; }
+
+async function api(path, opts){
+  var res = await fetch(API+path, Object.assign({ headers:{ 'authorization':'Bearer '+TOKEN, 'content-type':'application/json' } }, opts||{}));
+  if(!res.ok) throw new Error(res.status); return res.json();
+}
+
+async function connect(){
+  API = document.getElementById('api').value.replace(/\/$/,'');
+  TOKEN = document.getElementById('token').value.trim();
+  if(!API || !TOKEN){ alert('Enter API base and admin token'); return; }
+  try{
+    var m = await api('/v1/admin/metrics');
+    var r = await api('/v1/admin/reports?status=open&limit=100');
+    LIVE = true; document.getElementById('banner').classList.add('hide');
+    render(m, r.items||[]);
+  }catch(e){ alert('Could not connect / not authorised ('+e.message+'). Showing preview data.'); }
+}
+
+function render(metrics, reports){
+  // tiles
+  var tiles = document.getElementById('tiles'); tiles.innerHTML='';
+  var defs = [
+    ['open_reports','Open reports', metrics.open_reports, true],
+    ['trees','Trees', metrics.trees, false],
+    ['users','Members', metrics.users, false],
+    ['trees_week','Trees / 7d', metrics.trees_week, false],
+    ['pending_deletions','Pending erasures', metrics.pending_deletions, false]
+  ];
+  defs.forEach(function(d){
+    var t=h('div',{class:'tile'+(d[3]&&d[2]>0?' alert':'')});
+    t.appendChild(h('div',{class:'v'}, (d[2]??0).toLocaleString()));
+    t.appendChild(h('div',{class:'k'}, d[1]));
+    tiles.appendChild(t);
+  });
+
+  // reports table (checklist + bulk actions in the card header)
+  var host = document.getElementById('reports'); host.innerHTML='';
+  SEL.clear(); updateBulk();
+  if(!reports.length){ host.appendChild(h('div',{class:'empty'},'🎉 No open reports.')); }
+  else {
+    var table=h('table');
+    table.appendChild(h('thead',null,'<tr><th class="chk"><input type="checkbox" class="allchk" id="allchk" aria-label="Select all reports"></th><th>Target</th><th>Reason</th><th>Detail</th><th>By</th></tr>'));
+    var tb=h('tbody');
+    reports.forEach(function(r){
+      var tr=h('tr');
+      var tdc=h('td',{class:'chk'});
+      var cb=h('input',{type:'checkbox',class:'rowchk','aria-label':'Select report'});
+      cb.dataset.id=r.id;
+      cb.onchange=function(){ toggleSel(r.id, cb.checked); syncAllCheckbox(); };
+      tdc.appendChild(cb); tr.appendChild(tdc);
+      tr.appendChild(h('td',null,'<span class="badge b-'+r.target_type+'">'+r.target_type+'</span><div class="muted">'+r.target_id+'</div>'));
+      tr.appendChild(h('td',null,'<span class="reason">'+r.reason.replace(/_/g,' ')+'</span>'));
+      tr.appendChild(h('td',null,'<div>'+(r.details||'')+'</div><div class="muted">'+timeAgo(r.created_at)+'</div>'));
+      tr.appendChild(h('td',null,'<span class="muted">'+(r.reporter||'—')+'</span>'));
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb); host.appendChild(table);
+    document.getElementById('allchk').onchange=function(e){ selectAll(e.target.checked); };
+  }
+
+  // reasons breakdown
+  var counts={}; reports.forEach(function(r){ counts[r.reason]=(counts[r.reason]||0)+1; });
+  var entries=Object.keys(counts).map(function(k){return [k,counts[k]];}).sort(function(a,b){return b[1]-a[1];});
+  var max=entries.reduce(function(m,e){return Math.max(m,e[1]);},1);
+  var rz=document.getElementById('reasons'); rz.innerHTML='';
+  entries.forEach(function(e,i){
+    var row=h('div',{class:'rrow'});
+    row.appendChild(h('div',{class:'rk'}, e[0].replace(/_/g,' ')));
+    var track=h('div',{class:'track'}); var bar=h('i'); bar.style.width=(e[1]/max*100)+'%'; bar.style.background=css(CAT[i%CAT.length]); track.appendChild(bar);
+    row.appendChild(track); row.appendChild(h('div',{class:'n'}, e[1]));
+    rz.appendChild(row);
+  });
+}
+
+// ---- selection + bulk actions ----
+function toggleSel(id, on){ if(on) SEL.add(id); else SEL.delete(id); updateBulk(); }
+function selectAll(on){
+  document.querySelectorAll('.rowchk').forEach(function(cb){ cb.checked=on; if(on) SEL.add(cb.dataset.id); else SEL.delete(cb.dataset.id); });
+  updateBulk();
+}
+function syncAllCheckbox(){
+  var allc=document.getElementById('allchk'); if(!allc) return;
+  var total=document.querySelectorAll('.rowchk').length;
+  var checked=document.querySelectorAll('.rowchk:checked').length;
+  allc.checked = total>0 && checked===total;
+  allc.indeterminate = checked>0 && checked<total;
+}
+function updateBulk(){
+  var n=SEL.size;
+  document.getElementById('selCount').textContent = n+' selected';
+  ['bHide','bRemove','bDismiss'].forEach(function(id){ document.getElementById(id).disabled = n===0; });
+}
+async function bulk(action){
+  var ids=Array.from(SEL);
+  if(!ids.length) return;
+  if(!LIVE){ alert('Preview mode — connect to a live API to '+action+' '+ids.length+' report'+(ids.length>1?'s':'')+'.'); return; }
+  try{
+    for(var i=0;i<ids.length;i++){ await api('/v1/admin/reports/'+ids[i]+'/resolve',{method:'POST',body:JSON.stringify({action:action})}); }
+    connect(); // refresh
+  }catch(e){ alert('Bulk action failed: '+e.message); }
+}
+
+// initial preview render
+render(DEMO_METRICS, DEMO_REPORTS);
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: mwavuli image pipeline — strip EXIF/GPS and generate thumbnails.
+
+Parameters:
+  UploadsBucketName: { Type: String }
+  PublicBucketName:  { Type: String }
+  DatabaseUrlSecretArn: { Type: String }
+
+Resources:
+  ImageProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/handler.handler
+      Runtime: nodejs20.x
+      MemorySize: 1024          # sharp benefits from memory
+      Timeout: 30
+      Architectures: [arm64]
+      Environment:
+        Variables:
+          S3_BUCKET_PUBLIC: !Ref PublicBucketName
+          # Inject DATABASE_URL from Secrets Manager at deploy time.
+          DATABASE_URL: '{{resolve:secretsmanager:mwavuli/db:SecretString:url}}'
+      Policies:
+        - S3ReadPolicy:  { BucketName: !Ref UploadsBucketName }
+        - S3CrudPolicy:  { BucketName: !Ref PublicBucketName }
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Ref DatabaseUrlSecretArn
+      Events:
+        Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: uploads/ }
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref UploadsBucketName
+      PublicAccessBlockConfiguration:   # originals are ALWAYS private
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true

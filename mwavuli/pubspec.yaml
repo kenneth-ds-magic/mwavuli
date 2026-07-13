@@ -1,0 +1,69 @@
+name: mwavuli
+description: "mwavuli — identify, map, and celebrate the world's trees, together."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # Typography (Roboto / Roboto Slab, no bundled font files)
+  google_fonts: ^6.2.1
+
+  # Camera & photos
+  camera: ^0.11.0
+  image_picker: ^1.1.2
+  path_provider: ^2.1.3
+
+  # Open-source maps (no API key required)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Geolocation
+  geolocator: ^12.0.0
+
+  # Networking (TLS by default)
+  dio: ^5.5.0
+
+  # Image processing — thumbnails + EXIF/GPS stripping on-device
+  image: ^4.2.0
+
+  # Offline: connectivity + encrypted storage for the sync queue/tokens
+  connectivity_plus: ^6.0.3
+  flutter_secure_storage: ^9.2.2
+
+  url_launcher: ^6.3.0
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.4.0
+
+  # Durable offline tree cache
+  drift: ^2.20.3
+  drift_flutter: ^0.2.0
+  sqlite3_flutter_libs: ^0.5.24
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+  drift_dev: ^2.20.3
+  build_runner: ^2.4.12
+
+flutter:
+  uses-material-design: true
+  # NOTE: Roboto is loaded at runtime via google_fonts, so no font assets
+  # are bundled here. Drop tile-cache or seed images under assets/ if needed.
+  assets:
+    - assets/branding/app_icon.png
