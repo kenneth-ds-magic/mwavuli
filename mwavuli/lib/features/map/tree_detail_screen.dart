@@ -555,30 +555,39 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
       decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0x24241D14))),
-      child: Row(children: [
-        CircleAvatar(
-            radius: 22,
-            backgroundColor: Palette.gold500,
-            child: Text(t.contributor.characters.first,
-                style: const TextStyle(color: Colors.white))),
-        const SizedBox(width: 11),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(t.contributor,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 14)),
-              Text(
-                  isSelf ? 'This is your tree log' : 'Community contributor',
-                  style: const TextStyle(
-                      fontSize: 11.5, color: Color(0xFF77694F))),
-            ],
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          CircleAvatar(
+              radius: 22,
+              backgroundColor: Palette.gold500,
+              child: Text(t.contributor.characters.first,
+                  style: const TextStyle(color: Colors.white))),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(t.contributor,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14)),
+                Text(
+                    isSelf ? 'This is your tree log' : 'Community contributor',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Color(0xFF77694F))),
+              ],
+            ),
           ),
-        ),
-        if (ownerId != null && !isSelf)
-          _ContributorFollowButton(ownerId: ownerId),
-      ]),
+          if (ownerId != null && !isSelf) ...[
+            const SizedBox(width: 8),
+            _ContributorFollowButton(ownerId: ownerId),
+          ],
+        ],
+      ),
     );
   }
 
@@ -746,8 +755,8 @@ class _ContributorFollowButtonState
   Widget build(BuildContext context) {
     if (!_checked) {
       return const SizedBox(
-        width: 34,
-        height: 34,
+        width: 88,
+        height: 36,
         child: Center(
             child: SizedBox(
                 width: 16,
@@ -758,19 +767,48 @@ class _ContributorFollowButtonState
     if (ref.watch(authControllerProvider) != AuthStatus.authenticated) {
       return const SizedBox.shrink();
     }
-    return SizedBox(
-      height: 34,
-      child: _busy
-          ? const Center(
-              child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2)))
-          : ElevatedButton(
-              onPressed: _toggle,
-              style: ElevatedButton.styleFrom(minimumSize: const Size(0, 34)),
-              child: Text(_following ? 'Following' : 'Follow'),
-            ),
+
+    final label = _following ? 'Following' : 'Follow';
+    final style = ElevatedButton.styleFrom(
+      minimumSize: const Size(72, 36),
+      maximumSize: const Size(120, 36),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+
+    if (_busy) {
+      return SizedBox(
+        width: 88,
+        height: 36,
+        child: ElevatedButton(
+          onPressed: null,
+          style: style,
+          child: const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    return ElevatedButton(
+      onPressed: _toggle,
+      style: style,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

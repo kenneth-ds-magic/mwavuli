@@ -2,8 +2,7 @@ import 'api_config.dart';
 
 /// Rewrites MinIO/S3 media URLs so they work on emulators and physical devices.
 ///
-/// The API may return `http://localhost:9000/...` while the app talks to the
-/// API via `127.0.0.1`, `10.0.2.2`, or a LAN IP. Map media to the same host.
+/// Prefer API `/v1/media/...` when the response still points at localhost MinIO.
 String? resolveMediaUrl(String? url) {
   if (url == null || url.trim().isEmpty) return null;
   final parsed = Uri.tryParse(url.trim());
@@ -13,10 +12,31 @@ String? resolveMediaUrl(String? url) {
   if (api == null || !api.hasAuthority) return url;
 
   final host = parsed.host;
-  if (host != 'localhost' && host != '127.0.0.1') return url;
+  final path = parsed.path;
 
-  final apiHost = api.host;
-  if (apiHost == host) return url;
+  // Already same-origin media proxy.
+  if (host == api.host && path.startsWith('/v1/media/')) return url;
 
-  return parsed.replace(host: apiHost).toString();
+  final looksLikeMinio = host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == 'minio' ||
+      parsed.port == 9000 ||
+      parsed.port == 9001;
+
+  if (looksLikeMinio) {
+    var key = path;
+    const bucket = '/mwavuli-public/';
+    final i = key.indexOf(bucket);
+    if (i >= 0) {
+      key = key.substring(i + bucket.length);
+    } else if (key.startsWith('/')) {
+      key = key.substring(1);
+    }
+    if (!key.startsWith('public/')) {
+      key = 'public/$key';
+    }
+    return api.replace(path: '/v1/media/$key').toString();
+  }
+
+  return url;
 }

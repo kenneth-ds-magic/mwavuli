@@ -5,34 +5,31 @@ import { s3, s3ForEndpoint } from './s3';
 
 type ReqLike = { headers?: { host?: string } };
 
-/** Hosts a phone/emulator can reach when talking to the dev API. */
+/** Host used to build media URLs that the client can reach. */
 function clientHostFromRequest(req?: ReqLike): string | null {
-  const host = req?.headers?.host?.split(':')[0];
+  const raw = req?.headers?.host?.trim();
+  if (!raw) return null;
+  const host = raw.split(':')[0];
   if (!host || host === 'minio' || host.endsWith('.internal')) return null;
-  if (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '10.0.2.2' ||
-    host.startsWith('192.168.') ||
-    host.startsWith('10.')
-  ) {
-    return host;
-  }
-  return null;
+  // Use full Host (may include port) so nginx :80 and API :8080 both work.
+  return raw;
 }
 
-/** Public bucket base for JSON responses (thumbnails, avatars). */
+/**
+ * Public media base for JSON responses.
+ * Prefer same-origin `/v1/media` proxy (works when MinIO :9000 is firewalled).
+ */
 export function mediaBaseFromRequest(req?: ReqLike): string {
   const host = clientHostFromRequest(req);
   if (host) {
-    return `http://${host}:${config.S3_PUBLIC_PORT}/mwavuli-public`;
+    return `http://${host}/v1/media`;
   }
   return config.S3_PUBLIC_BASE_URL.replace(/\/$/, '');
 }
 
-/** MinIO/S3 origin for presigned PUT URLs returned to mobile clients. */
+/** MinIO/S3 origin for legacy presigned PUTs (prefer API upload proxy on mobile). */
 export function uploadEndpointFromRequest(req?: ReqLike): string {
-  const host = clientHostFromRequest(req);
+  const host = clientHostFromRequest(req)?.split(':')[0];
   if (host) return `http://${host}:${config.S3_PUBLIC_PORT}`;
   if (config.S3_ENDPOINT && !config.S3_ENDPOINT.includes('minio:')) {
     return config.S3_ENDPOINT;

@@ -365,14 +365,26 @@ class _LogFlowState extends ConsumerState<LogFlow> {
       final res = await ref.read(apiClientProvider).createTree(body);
       final uploads = (res['uploads'] as List?) ?? const [];
       final api = ref.read(apiClientProvider);
+      var uploaded = 0;
       for (var i = 0; i < uploads.length && i < _photos.length; i++) {
         final upload = (uploads[i] as Map).cast<String, dynamic>();
         final photoId = upload['photoId'] as String?;
         if (photoId == null) continue;
+        // Full-resolution capture bytes — PlantNet thumbnails are never
+        // written back into [_photos].
         await api.uploadPhoto(
           photoId,
           _photos[i].bytes,
           contentType: _photos[i].contentType,
+        );
+        uploaded++;
+      }
+      if (uploads.isNotEmpty && uploaded == 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tree saved, but photos failed to upload. Try again later.'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
       final tree = (res['tree'] as Map).cast<String, dynamic>();
@@ -395,20 +407,35 @@ class _LogFlowState extends ConsumerState<LogFlow> {
         );
         _step = 4;
       });
-    } catch (_) {
-      await _queue(body);
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _result = LogSubmitResult(
-          treeId: '',
-          commonName: commonName,
-          queued: true,
-          isFuzzy: _fuzzy,
-          visibility: _visibility,
+    } catch (e) {
+      // Prefer surfacing upload/create failures over silent offline queue
+      // when we already reached the API for identify earlier in the session.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not save tree: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-        _step = 4;
-      });
+      }
+      try {
+        await _queue(body);
+        if (!mounted) return;
+        setState(() {
+          _submitting = false;
+          _result = LogSubmitResult(
+            treeId: '',
+            commonName: commonName,
+            queued: true,
+            isFuzzy: _fuzzy,
+            visibility: _visibility,
+          );
+          _step = 4;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+      }
     }
   }
 
