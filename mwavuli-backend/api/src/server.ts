@@ -21,6 +21,8 @@ export async function buildApp() {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
     trustProxy: true, // behind a load balancer — trust X-Forwarded-For for req.ip
+    // Identify sends base64 JPEGs in JSON; default 1 MiB is far too small.
+    bodyLimit: 25 * 1024 * 1024,
   });
 
   await app.register(helmet);

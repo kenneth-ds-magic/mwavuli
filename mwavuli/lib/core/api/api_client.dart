@@ -9,6 +9,7 @@ import '../../data/models/tree_comment.dart';
 import '../../data/models/explore.dart';
 import '../../data/models/community.dart';
 import '../camera/photo_capture.dart';
+import '../privacy/exif.dart';
 import 'api_config.dart';
 import 'token_store.dart';
 
@@ -391,15 +392,16 @@ class ApiClient {
   Future<IdentifyResponse> identifyPhotos(
     List<CapturedPhoto> photos,
   ) async {
-    final r = await _dio.post('/v1/identify', data: {
-      'images': photos
-          .map((p) => {
-                'organ': _organForApi(p.organ),
-                'data': base64Encode(p.bytes),
-                'contentType': p.contentType,
-              })
-          .toList(),
-    });
+    // Downscale for identify only — full-res bytes are still used for upload.
+    final payload = photos.map((p) {
+      final forId = ImagePrivacy.thumbnail(p.bytes, maxEdge: 1280);
+      return {
+        'organ': _organForApi(p.organ),
+        'data': base64Encode(forId),
+        'contentType': p.contentType,
+      };
+    }).toList();
+    final r = await _dio.post('/v1/identify', data: {'images': payload});
     return _parseIdentifyResponse(r.data);
   }
 
