@@ -2,7 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { FastifyInstance } from 'fastify';
 import { config } from '../config';
 import { notFound } from '../lib/errors';
-import { s3 } from './s3';
+import { s3 } from '../services/s3';
 
 async function streamToBuffer(stream: unknown): Promise<Buffer> {
   const chunks: Buffer[] = [];
