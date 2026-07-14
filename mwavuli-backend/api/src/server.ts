@@ -86,6 +86,12 @@ export async function buildApp() {
 }
 
 if (require.main === module) {
+  const key = config.PLANTNET_API_KEY?.trim() ?? '';
+  console.info(
+    key
+      ? `[boot] PlantNet enabled (key …${key.slice(-4)}) → ${config.PLANTNET_ENDPOINT}`
+      : '[boot] PlantNet DISABLED — empty PLANTNET_API_KEY (demo stub IDs)',
+  );
   buildApp()
     .then((app) => app.listen({ port: config.PORT, host: '0.0.0.0' }))
     .catch((err) => {

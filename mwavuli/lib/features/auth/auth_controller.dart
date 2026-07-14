@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/token_store.dart';
-import '../../data/repositories/profile_repository.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -22,8 +21,8 @@ class AuthController extends Notifier<AuthStatus> {
 
   Future<void> login(String identifier, String password) async {
     await ref.read(apiClientProvider).login(identifier, password);
+    // profileProvider watches auth — flipping state is enough to refetch.
     state = AuthStatus.authenticated;
-    ref.invalidate(profileProvider);
   }
 
   Future<void> register({
@@ -41,13 +40,13 @@ class AuthController extends Notifier<AuthStatus> {
           birthYear: birthYear,
         );
     state = AuthStatus.authenticated;
-    ref.invalidate(profileProvider);
   }
 
   Future<void> logout() async {
     await ref.read(apiClientProvider).logout();
+    // Do not invalidate profileProvider here — it watches this provider, and
+    // invalidate() from a dependency raises CircularDependencyError.
     state = AuthStatus.unauthenticated;
-    ref.invalidate(profileProvider);
   }
 }
 

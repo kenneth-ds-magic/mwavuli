@@ -55,6 +55,7 @@ export async function identifyRoutes(app: FastifyInstance) {
       return {
         candidates: result.candidates,
         source: result.source,
+        ...(result.detail ? { detail: result.detail } : {}),
       };
     },
   );

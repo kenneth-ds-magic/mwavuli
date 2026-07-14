@@ -1,7 +1,5 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { config } from '../config';
-import { publicUrl, s3 } from './storage';
 
 export interface Candidate {
   commonName: string;
@@ -15,6 +13,8 @@ export type IdentifySource = 'plantnet' | 'stub' | 'unavailable';
 export interface IdentifyResult {
   candidates: Candidate[];
   source: IdentifySource;
+  /** Short reason when source is unavailable (safe for clients / logs). */
+  detail?: string;
 }
 
 export interface IdentifyImage {
@@ -22,90 +22,125 @@ export interface IdentifyImage {
   data: Buffer;
 }
 
+/** Pl@ntNet organs — our UI "whole" maps to habit/auto. */
+function plantNetOrgan(organ: string): string {
+  switch (organ) {
+    case 'leaf':
+    case 'flower':
+    case 'fruit':
+    case 'bark':
+      return organ;
+    case 'whole':
+      return 'habit';
+    default:
+      return 'auto';
+  }
+}
+
+function hasPlantNetKey(): boolean {
+  return Boolean(config.PLANTNET_API_KEY?.trim());
+}
+
 /**
- * Identify a tree from public image URLs using Pl@ntNet.
+ * Identify a tree from public image URLs using Pl@ntNet (GET).
+ * Only useful when those URLs are reachable from the public internet.
  */
 export async function identify(
   imageUrls: string[],
   organs: string[] = [],
 ): Promise<IdentifyResult> {
-  if (!config.PLANTNET_API_KEY) {
+  if (!hasPlantNetKey()) {
     return { candidates: stub(), source: 'stub' };
   }
   try {
     const url = new URL(config.PLANTNET_ENDPOINT);
     url.searchParams.set('api-key', config.PLANTNET_API_KEY);
     imageUrls.forEach((u) => url.searchParams.append('images', u));
-    const organList = organs.length ? organs : imageUrls.map(() => 'auto');
+    const organList =
+      organs.length > 0 ? organs.map(plantNetOrgan) : imageUrls.map(() => 'auto');
     organList.forEach((o) => url.searchParams.append('organs', o));
 
     const res = await fetch(url, { method: 'GET' });
-    if (!res.ok) throw new Error(`plantnet ${res.status}`);
-    const candidates = mapPlantNet((await res.json()) as PlantNetResponse);
+    const text = await res.text();
+    if (!res.ok) {
+      console.error(`[identify] PlantNet GET ${res.status}: ${text.slice(0, 300)}`);
+      return {
+        candidates: [],
+        source: 'unavailable',
+        detail: `plantnet_http_${res.status}`,
+      };
+    }
+    const candidates = mapPlantNet(JSON.parse(text) as PlantNetResponse);
     return { candidates, source: 'plantnet' };
-  } catch {
-    return { candidates: [], source: 'unavailable' };
+  } catch (err) {
+    console.error('[identify] PlantNet GET failed', err);
+    return { candidates: [], source: 'unavailable', detail: 'plantnet_error' };
   }
 }
 
 /**
- * Identify from raw JPEG bytes (mobile capture). Posts multipart to Pl@ntNet,
- * or stages to S3 + URL identify when multipart is unavailable.
+ * Identify from raw JPEG bytes (mobile capture). Posts multipart to Pl@ntNet.
  */
 export async function identifyFromBytes(
   images: IdentifyImage[],
 ): Promise<IdentifyResult> {
   if (!images.length) {
-    return { candidates: [], source: 'unavailable' };
+    return { candidates: [], source: 'unavailable', detail: 'no_images' };
   }
-  if (!config.PLANTNET_API_KEY) {
+  if (!hasPlantNetKey()) {
+    console.warn(
+      '[identify] PLANTNET_API_KEY is empty — returning demo stub candidates',
+    );
     return { candidates: stub(images.length), source: 'stub' };
   }
 
-  const multipart = await identifyMultipart(images);
-  if (multipart) return { candidates: multipart, source: 'plantnet' };
-
-  // Fallback: stage to public bucket and use URL-based identify.
-  try {
-    const urls: string[] = [];
-    const organs: string[] = [];
-    for (const img of images) {
-      const key = `identify-temp/${randomUUID()}.jpg`;
-      const pubKey = `public/${key}`;
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: config.S3_BUCKET_PUBLIC,
-          Key: pubKey,
-          Body: img.data,
-          ContentType: 'image/jpeg',
-        }),
-      );
-      urls.push(publicUrl(pubKey));
-      organs.push(img.organ || 'auto');
-    }
-    return await identify(urls, organs);
-  } catch {
-    return { candidates: [], source: 'unavailable' };
-  }
+  return identifyMultipart(images);
 }
 
 async function identifyMultipart(
   images: IdentifyImage[],
-): Promise<Candidate[] | null> {
+): Promise<IdentifyResult> {
   try {
     const form = new FormData();
     for (const img of images) {
-      const blob = new Blob([new Uint8Array(img.data)], { type: 'image/jpeg' });
-      form.append('images', blob, `${img.organ || 'leaf'}.jpg`);
-      form.append('organs', img.organ || 'auto');
+      const name = `${plantNetOrgan(img.organ)}-${randomUUID().slice(0, 8)}.jpg`;
+      // Node 20+: File is the reliable way to attach filename + type.
+      const file = new File([new Uint8Array(img.data)], name, {
+        type: 'image/jpeg',
+      });
+      form.append('images', file);
+      form.append('organs', plantNetOrgan(img.organ));
     }
+
     const url = new URL(config.PLANTNET_ENDPOINT);
-    url.searchParams.set('api-key', config.PLANTNET_API_KEY);
+    url.searchParams.set('api-key', config.PLANTNET_API_KEY.trim());
+
+    console.info(
+      `[identify] PlantNet POST ${url.origin}${url.pathname} ` +
+        `(${images.length} image(s), key …${config.PLANTNET_API_KEY.trim().slice(-4)})`,
+    );
+
     const res = await fetch(url.toString(), { method: 'POST', body: form });
-    if (!res.ok) return null;
-    return mapPlantNet((await res.json()) as PlantNetResponse);
-  } catch {
-    return null;
+    const text = await res.text();
+    if (!res.ok) {
+      console.error(`[identify] PlantNet POST ${res.status}: ${text.slice(0, 400)}`);
+      return {
+        candidates: [],
+        source: 'unavailable',
+        detail: `plantnet_http_${res.status}`,
+      };
+    }
+
+    const candidates = mapPlantNet(JSON.parse(text) as PlantNetResponse);
+    console.info(`[identify] PlantNet OK — ${candidates.length} candidate(s)`);
+    return { candidates, source: 'plantnet' };
+  } catch (err) {
+    console.error('[identify] PlantNet POST failed', err);
+    return {
+      candidates: [],
+      source: 'unavailable',
+      detail: 'plantnet_error',
+    };
   }
 }
 
