@@ -426,9 +426,9 @@ class ApiClient {
   Future<IdentifyResponse> identifyPhotos(
     List<CapturedPhoto> photos,
   ) async {
-    // Downscale for identify only — full-res bytes are still used for upload.
-    final payload = photos.map((p) {
-      final forId = ImagePrivacy.thumbnail(p.bytes, maxEdge: 1280);
+    // Downscale for identify only (max 5 photos per Pl@ntNet API limits)
+    final payload = photos.take(5).map((p) {
+      final forId = ImagePrivacy.thumbnail(p.bytes, maxEdge: 800);
       return {
         'organ': _organForApi(p.organ),
         'data': base64Encode(forId),
@@ -442,8 +442,8 @@ class ApiClient {
   Future<IdentifyResponse> identify(List<String> imageUrls,
       {List<String>? organs}) async {
     final r = await _dio.post('/v1/identify', data: {
-      'imageUrls': imageUrls,
-      if (organs != null) 'organs': organs,
+      'imageUrls': imageUrls.take(5).toList(),
+      if (organs != null) 'organs': organs.take(5).toList(),
     });
     return _parseIdentifyResponse(r.data);
   }
@@ -473,7 +473,7 @@ class ApiClient {
   }
 
   static String _organForApi(String organ) {
-    const allowed = {'whole', 'bark', 'leaf', 'flower', 'fruit'};
+    const allowed = {'whole', 'bark', 'leaf', 'flower', 'fruit', 'habit', 'other'};
     return allowed.contains(organ) ? organ : 'whole';
   }
 

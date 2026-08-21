@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -922,24 +923,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final dateStr = DateTime.now().toIso8601String().split('T').first;
     final filename = 'mwavuli-export-$dateStr.$format';
 
-    Directory? dir;
+    final candidateDirs = <Directory>[];
+
     try {
       if (Platform.isAndroid) {
         final downloadDir = Directory('/storage/emulated/0/Download');
-        if (await downloadDir.exists()) {
-          dir = downloadDir;
-        } else {
-          dir = await getExternalStorageDirectory();
-        }
+        if (await downloadDir.exists()) candidateDirs.add(downloadDir);
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) candidateDirs.add(extDir);
       } else {
-        dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+        final dlDir = await getDownloadsDirectory();
+        if (dlDir != null) candidateDirs.add(dlDir);
+        candidateDirs.add(await getApplicationDocumentsDirectory());
       }
     } catch (_) {}
-    dir ??= await getTemporaryDirectory();
 
-    final savedFile = File('${dir.path}/$filename');
-    await savedFile.writeAsString(content);
-    return savedFile;
+    try {
+      candidateDirs.add(await getApplicationDocumentsDirectory());
+    } catch (_) {}
+    try {
+      candidateDirs.add(await getTemporaryDirectory());
+    } catch (_) {}
+
+    for (final dir in candidateDirs) {
+      try {
+        final file = File('${dir.path}/$filename');
+        await file.writeAsString(content);
+        return file;
+      } catch (_) {
+        // Continue to next directory if permission denied on Scoped Storage
+        continue;
+      }
+    }
+
+    final fallback = File('${(await getTemporaryDirectory()).path}/$filename');
+    await fallback.writeAsString(content);
+    return fallback;
   }
 
   Future<void> _exportData(BuildContext context) async {
@@ -964,6 +983,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
     if (format == null || !context.mounted) return;
 
+    var loadingDialogShown = false;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -983,12 +1003,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       ),
     );
+    loadingDialogShown = true;
 
     try {
       final rawData =
           await ref.read(apiClientProvider).exportData(format: format);
-      if (!context.mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+      if (loadingDialogShown && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingDialogShown = false;
+      }
 
       String content;
       if (rawData is String) {
@@ -1004,7 +1027,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _showExportResultSheet(context, file, content, format);
     } catch (e) {
       if (context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
+        if (loadingDialogShown) {
+          Navigator.of(context, rootNavigator: true).pop();
+          loadingDialogShown = false;
+        }
         var msg = 'Export failed: $e';
         if (e.toString().contains('429')) {
           msg = 'Rate limit reached. Please wait a moment before exporting again.';
@@ -1059,7 +1085,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'File size: $kbSize KB · Downloaded to: $filename',
+                'File size: $kbSize KB · Tap below to save to any directory',
                 style: TextStyle(fontSize: 12.5, color: ctx.earth.ink2),
               ),
               const SizedBox(height: 12),
@@ -1084,39 +1110,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.drive_file_move_outlined, size: 20),
+                label: Text('Save .$format ...'.toUpperCase()),
+                onPressed: () async {
+                  try {
+                    await Share.shareXFiles(
+                      [XFile(file.path)],
+                      text: 'Mwavuli GDPR Data Export ($filename)',
+                    );
+                  } catch (_) {
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(
+                        content: Text('Could not open file saver'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(Icons.download_rounded, size: 18),
-                      label: Text('Save .$format'.toUpperCase()),
-                      onPressed: () async {
-                        try {
-                          final saved = await _saveExportToDownloads(content, format);
-                          if (!ctx.mounted) return;
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: Text('File saved to ${saved.path}'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        } catch (_) {
-                          if (!ctx.mounted) return;
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(
-                              content: Text('Could not download file'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
                       icon: const Icon(Icons.copy_rounded, size: 18),
-                      label: const Text('Copy'),
+                      label: const Text('Copy Content'),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: content));
                         ScaffoldMessenger.of(ctx).showSnackBar(
@@ -1128,12 +1148,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       },
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Done'),
+                    ),
+                  ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Done'),
               ),
             ],
           ),

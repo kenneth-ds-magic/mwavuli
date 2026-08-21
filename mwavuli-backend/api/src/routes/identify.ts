@@ -5,7 +5,7 @@ import { parse } from '../lib/validate';
 import { requireAuth } from '../auth/plugin';
 import { identify, identifyFromBytes } from '../services/identify';
 
-const Organ = z.enum(['whole', 'bark', 'leaf', 'flower', 'fruit']);
+const Organ = z.enum(['whole', 'bark', 'leaf', 'flower', 'fruit', 'habit', 'other']);
 
 export async function identifyRoutes(app: FastifyInstance) {
   // Heavier per-route limit — identification calls an upstream model.
@@ -19,12 +19,12 @@ export async function identifyRoutes(app: FastifyInstance) {
       const b = parse(
         z
           .object({
-            imageUrls: z.array(z.string().url()).max(5).optional(),
+            imageUrls: z.array(z.string()).max(5).optional(),
             images: z
               .array(
                 z.object({
                   organ: Organ.default('whole'),
-                  data: z.string().min(1).max(8_000_000),
+                  data: z.string().min(1).max(15_000_000),
                   contentType: z.string().default('image/jpeg'),
                 }),
               )

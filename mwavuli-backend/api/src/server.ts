@@ -57,10 +57,14 @@ export async function buildApp() {
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {
+      if (err.statusCode >= 400 && err.statusCode < 500) {
+        req.log.warn({ message: err.message }, `Client error ${err.statusCode}`);
+      }
       reply.code(err.statusCode).send({ error: err.code, message: err.message });
       return;
     }
     if ((err as { validation?: unknown }).validation) {
+      req.log.warn({ message: err.message }, 'Client validation error 400');
       reply.code(400).send({ error: 'bad_request', message: err.message });
       return;
     }

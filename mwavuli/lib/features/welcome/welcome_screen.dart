@@ -12,6 +12,8 @@ class WelcomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authStatus = ref.watch(authControllerProvider);
+
     ref.listen<AuthStatus>(authControllerProvider, (_, next) {
       // Only auto-enter the app from this screen. Login/register sit above
       // welcome via push — redirecting here races their own go('/explore')
@@ -20,6 +22,47 @@ class WelcomeScreen extends ConsumerWidget {
       final path = GoRouterState.of(context).uri.path;
       if (path == '/welcome') context.go('/explore');
     });
+
+    if (authStatus == AuthStatus.unknown) {
+      return Scaffold(
+        backgroundColor: Palette.green800,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(26),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                ),
+                child: const Icon(Icons.park_rounded, color: Color(0xFFEAF6DF), size: 48),
+              ),
+              const SizedBox(height: 24),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  color: Color(0xFFEAF6DF),
+                  strokeWidth: 2.8,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Syncing & starting Mwavuli...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Palette.green800,
