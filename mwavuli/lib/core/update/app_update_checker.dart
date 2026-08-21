@@ -70,7 +70,7 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
         PopScope(
           canPop: false,
           child: Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.85),
+            backgroundColor: Colors.black.withValues(alpha: 0.85),
             body: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
@@ -82,7 +82,7 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       ),
@@ -104,21 +104,21 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text(
+                      const Text(
                         'Update Available',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: Palette.ink900,
+                          color: Palette.ink,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'A new version of Mwavuli (v$_latestVersion) is available. Please update to continue using the application.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
-                          color: Palette.ink700,
+                          color: Palette.ink2,
                           height: 1.4,
                         ),
                       ),

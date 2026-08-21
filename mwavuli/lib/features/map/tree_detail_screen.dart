@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:typed_data';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -535,7 +534,7 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
             await ref.read(treeRepositoryProvider).updateTree(tree.id, body);
             ref.invalidate(treeDetailProvider(widget.treeId));
             ref.invalidate(feedProvider);
-            if (context.mounted) {
+            if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Tree details updated in database!'),
@@ -546,7 +545,7 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
           } catch (_) {
             await ref.read(syncServiceProvider).enqueueUpdate(tree.id, body);
             ref.invalidate(syncQueueCountProvider);
-            if (context.mounted) {
+            if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(

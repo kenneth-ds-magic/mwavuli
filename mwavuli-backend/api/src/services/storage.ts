@@ -1,13 +1,14 @@
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { IncomingHttpHeaders } from 'http';
 import { config } from '../config';
 import { s3, s3ForEndpoint } from './s3';
 
-type ReqLike = { headers?: { host?: string } };
+type ReqLike = { headers?: IncomingHttpHeaders };
 
 /** Host used to build media URLs that the client can reach. */
 function clientHostFromRequest(req?: ReqLike): string | null {
-  const raw = req?.headers?.host?.trim();
+  const raw = (typeof req?.headers?.host === 'string' ? req.headers.host : req?.headers?.host?.[0])?.trim();
   if (!raw) return null;
   const host = raw.split(':')[0];
   if (!host || host === 'minio' || host.endsWith('.internal')) return null;
@@ -22,7 +23,17 @@ function clientHostFromRequest(req?: ReqLike): string | null {
 export function mediaBaseFromRequest(req?: ReqLike): string {
   const host = clientHostFromRequest(req);
   if (host) {
-    return `http://${host}/v1/media`;
+    const rawPrefix = req?.headers?.['x-forwarded-prefix'];
+    let prefix = (Array.isArray(rawPrefix) ? rawPrefix[0] : rawPrefix)?.replace(/^\/|\/$/g, '') ?? '';
+    const rawReferer = req?.headers?.['referer'];
+    const referer = Array.isArray(rawReferer) ? rawReferer[0] : rawReferer;
+    const rawUri = req?.headers?.['x-forwarded-uri'];
+    const uri = Array.isArray(rawUri) ? rawUri[0] : rawUri;
+    if (!prefix && (referer?.includes('/mwavuli') || uri?.includes('/mwavuli'))) {
+      prefix = 'mwavuli';
+    }
+    const prefixPath = prefix ? `/${prefix}` : '';
+    return `http://${host}${prefixPath}/v1/media`;
   }
   return config.S3_PUBLIC_BASE_URL.replace(/\/$/, '');
 }

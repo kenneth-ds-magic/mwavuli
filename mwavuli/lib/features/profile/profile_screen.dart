@@ -1569,7 +1569,6 @@ class _ProfileFormField extends StatelessWidget {
     this.maxLength,
     this.textCapitalization = TextCapitalization.none,
     this.textInputAction,
-    this.suffixIcon,
   });
 
   final TextEditingController controller;
@@ -1579,7 +1578,6 @@ class _ProfileFormField extends StatelessWidget {
   final int? maxLength;
   final TextCapitalization textCapitalization;
   final TextInputAction? textInputAction;
-  final Widget? suffixIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -1615,7 +1613,6 @@ class _ProfileFormField extends StatelessWidget {
                 child: Icon(icon, size: 20, color: Palette.green700),
               ),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        suffixIcon: suffixIcon,
         border: border,
         enabledBorder: border,
         focusedBorder: OutlineInputBorder(
