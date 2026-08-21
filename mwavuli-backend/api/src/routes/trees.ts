@@ -380,7 +380,7 @@ export async function treeRoutes(app: FastifyInstance) {
         );
         saved = (savedRow.rowCount ?? 0) > 0;
         const likedRow = await c.query(
-          `SELECT 1 FROM tree_likes WHERE user_id = $1 AND tree_id = $2`,
+          `SELECT 1 FROM likes WHERE user_id = $1 AND tree_id = $2`,
           [req.principal.userId, id],
         );
         liked = (likedRow.rowCount ?? 0) > 0;
