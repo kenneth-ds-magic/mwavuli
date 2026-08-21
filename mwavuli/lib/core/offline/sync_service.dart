@@ -26,7 +26,18 @@ class SyncService {
 
   /// Queue a create-request plus the cache paths of its photos.
   Future<int> enqueue(Map<String, dynamic> body, List<String> photoPaths) async {
-    final q = await _read()..add({'body': body, 'photoPaths': photoPaths});
+    final q = await _read()..add({'type': 'create', 'body': body, 'photoPaths': photoPaths});
+    await _write(q);
+    return q.length;
+  }
+
+  /// Queue an update-request for an existing tree when offline.
+  Future<int> enqueueUpdate(String treeId, Map<String, dynamic> body) async {
+    final q = await _read()..add({
+      'type': 'update',
+      'treeId': treeId,
+      'body': body,
+    });
     await _write(q);
     return q.length;
   }
@@ -42,20 +53,33 @@ class SyncService {
     final remaining = <Map<String, dynamic>>[];
     for (final item in q) {
       try {
-        final body = (item['body'] as Map).cast<String, dynamic>();
-        final paths = (item['photoPaths'] as List?)?.cast<String>() ?? const [];
-        final res = await api.createTree(body);
-        final uploads = (res['uploads'] as List?) ?? const [];
-        for (var i = 0; i < uploads.length && i < paths.length; i++) {
-          final uploadMap = (uploads[i] as Map).cast<String, dynamic>();
-          final bytes = await cache.read(paths[i]);
-          final photoId = uploadMap['photoId'] as String?;
-          if (bytes != null && photoId != null) {
-            await api.uploadPhoto(photoId, bytes);
+        final type = item['type'] as String? ?? 'create';
+        if (type == 'update') {
+          final treeId = item['treeId'] as String?;
+          final body = (item['body'] as Map).cast<String, dynamic>();
+          if (treeId != null) {
+            await api.updateTree(treeId, body);
           }
-        }
-        for (final p in paths) {
-          await cache.delete(p);
+        } else {
+          final body = (item['body'] as Map).cast<String, dynamic>();
+          final paths = (item['photoPaths'] as List?)?.cast<String>() ?? const [];
+          final res = await api.createTree(body);
+          final uploads = (res['uploads'] as List?) ?? const [];
+          for (var i = 0; i < uploads.length && i < paths.length; i++) {
+            final uploadMap = (uploads[i] as Map).cast<String, dynamic>();
+            final bytes = await cache.read(paths[i]);
+            final photoId = uploadMap['photoId'] as String?;
+            if (bytes != null && photoId != null) {
+              try {
+                await api.uploadPhoto(photoId, bytes);
+              } catch (_) {
+                // Individual photo upload error does not force re-creation of tree.
+              }
+            }
+          }
+          for (final p in paths) {
+            await cache.delete(p);
+          }
         }
       } catch (_) {
         remaining.add(item);

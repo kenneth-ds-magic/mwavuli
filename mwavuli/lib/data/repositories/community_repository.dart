@@ -79,7 +79,7 @@ class ActivityFeedPage {
 }
 
 class ActivityFeedNotifier extends AsyncNotifier<ActivityFeedPage> {
-  static const pageSize = 20;
+  static const pageSize = 10;
 
   @override
   Future<ActivityFeedPage> build() async {

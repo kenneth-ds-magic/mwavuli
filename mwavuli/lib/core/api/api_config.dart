@@ -2,5 +2,7 @@
 ///   flutter run --dart-define=MWAVULI_API=https://api.mwavuli.app
 class ApiConfig {
   static const String baseUrl =
-      String.fromEnvironment('MWAVULI_API', defaultValue: 'http://129.205.2.218');
+      String.fromEnvironment('MWAVULI_API', defaultValue: 'http://129.205.2.218/mwavuli');
+  static const String appVersion =
+      String.fromEnvironment('MWAVULI_VERSION', defaultValue: '0.1.0');
 }

@@ -23,6 +23,29 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
   List<LeaderboardEntry> _extraLeaderboard = const [];
   bool _leaderboardLoading = false;
   bool _leaderboardHasMore = false;
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController()..addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.offset;
+    if (maxScroll - currentScroll <= 250) {
+      ref.read(activityFeedProvider.notifier).loadMore();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +53,19 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     final feed = ref.watch(communityProvider);
     final activity = ref.watch(activityFeedProvider);
 
+    ref.listen(communityProvider, (prev, next) {
+      if (next.isLoading || next.isRefreshing) {
+        if (_extraLeaderboard.isEmpty && !_leaderboardHasMore) return;
+        setState(() {
+          _extraLeaderboard = const [];
+          _leaderboardHasMore = false;
+        });
+      }
+    });
+
     return feed.when(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, __) => Center(
         child: Column(
@@ -63,6 +98,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             ref.invalidate(activityFeedProvider);
           },
           child: ListView(
+            controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 24),
             children: [
               Padding(
@@ -213,8 +249,16 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                     ),
                   ),
               ],
-              const SectionHeader('Recent activity'),
+              SectionHeader(
+                'Recent activity',
+                action: activity.valueOrNull != null &&
+                        activity.valueOrNull!.items.isNotEmpty
+                    ? '${activity.valueOrNull!.items.length} items'
+                    : null,
+              ),
               ...activity.when(
+                skipLoadingOnReload: true,
+                skipLoadingOnRefresh: true,
                 loading: () => [
                   const Padding(
                     padding: EdgeInsets.all(24),

@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -40,6 +41,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
   bool _manualId = false;
   int _selected = 0;
   final List<CapturedPhoto> _photos = [];
+  String _clientTxId = const Uuid().v4();
   LogSubmitResult? _result;
 
   final _commonNameCtrl = TextEditingController();
@@ -326,6 +328,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
     }
 
     final body = <String, dynamic>{
+      'clientTxId': _clientTxId,
       'commonName': commonName,
       if (_scientificCtrl.text.trim().isNotEmpty)
         'scientificName': _scientificCtrl.text.trim(),
@@ -344,6 +347,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
           .toList(),
     };
 
+    var createdOnServer = false;
     try {
       if (offline) {
         await _queue(body);
@@ -363,6 +367,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
       }
 
       final res = await ref.read(apiClientProvider).createTree(body);
+      createdOnServer = true;
       final uploads = (res['uploads'] as List?) ?? const [];
       final api = ref.read(apiClientProvider);
       var uploaded = 0;
@@ -370,14 +375,16 @@ class _LogFlowState extends ConsumerState<LogFlow> {
         final upload = (uploads[i] as Map).cast<String, dynamic>();
         final photoId = upload['photoId'] as String?;
         if (photoId == null) continue;
-        // Full-resolution capture bytes — PlantNet thumbnails are never
-        // written back into [_photos].
-        await api.uploadPhoto(
-          photoId,
-          _photos[i].bytes,
-          contentType: _photos[i].contentType,
-        );
-        uploaded++;
+        try {
+          await api.uploadPhoto(
+            photoId,
+            _photos[i].bytes,
+            contentType: _photos[i].contentType,
+          );
+          uploaded++;
+        } catch (_) {
+          // Photo upload error handled gracefully; tree row is already created.
+        }
       }
       if (uploads.isNotEmpty && uploaded == 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -408,8 +415,6 @@ class _LogFlowState extends ConsumerState<LogFlow> {
         _step = 4;
       });
     } catch (e) {
-      // Prefer surfacing upload/create failures over silent offline queue
-      // when we already reached the API for identify earlier in the session.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -418,23 +423,30 @@ class _LogFlowState extends ConsumerState<LogFlow> {
           ),
         );
       }
-      try {
-        await _queue(body);
-        if (!mounted) return;
-        setState(() {
-          _submitting = false;
-          _result = LogSubmitResult(
-            treeId: '',
-            commonName: commonName,
-            queued: true,
-            isFuzzy: _fuzzy,
-            visibility: _visibility,
-          );
-          _step = 4;
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() => _submitting = false);
+      // ONLY fallback to offline queueing if createTree failed on the server.
+      if (!createdOnServer) {
+        try {
+          await _queue(body);
+          if (!mounted) return;
+          setState(() {
+            _submitting = false;
+            _result = LogSubmitResult(
+              treeId: '',
+              commonName: commonName,
+              queued: true,
+              isFuzzy: _fuzzy,
+              visibility: _visibility,
+            );
+            _step = 4;
+          });
+        } catch (_) {
+          if (!mounted) return;
+          setState(() => _submitting = false);
+        }
+      } else {
+        if (mounted) {
+          setState(() => _submitting = false);
+        }
       }
     }
   }
@@ -1133,6 +1145,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
             child: OutlinedButton(
                 onPressed: () => setState(() {
                       _step = 0;
+                      _clientTxId = const Uuid().v4();
                       _candidates = const [];
                       _identifySource = null;
                       _manualId = false;

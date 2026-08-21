@@ -13,6 +13,7 @@ import { levelFromPoints, levelName } from '../services/gamification';
 import { config } from '../config';
 
 const CreateTree = z.object({
+  clientTxId: z.string().max(64).optional(),
   commonName: z.string().min(1).max(120),
   scientificName: z.string().max(160).optional(),
   speciesId: z.string().uuid().optional(),
@@ -178,66 +179,115 @@ export async function fetchPublicFeed(
     `SELECT ${TREE_COLS},
             ${TREE_PHOTO_COLS}
        FROM trees t JOIN users u ON u.id = t.owner_id
-      WHERE ${where} ORDER BY t.created_at DESC LIMIT $1`,
+      WHERE ${where}
+      ORDER BY t.created_at DESC
+      LIMIT $1`,
     params,
   );
   return rows.map((r) => mapTree(r, mediaBase));
 }
 
 export async function treeRoutes(app: FastifyInstance) {
-  // --- Create ---
   app.post('/v1/trees', { preHandler: requireAuth }, async (req) => {
     const b = parse(CreateTree, req.body);
     const p = req.principal;
     const mediaBase = mediaBaseFromRequest(req);
     return runAs(p, async (c: PoolClient) => {
-      const ins = await c.query(
-        `INSERT INTO trees
-           (owner_id, species_id, common_name, scientific_name, health, height_m,
-            girth_m, age_estimate, description, features, confidence, visibility,
-            is_fuzzy, fuzzy_geom)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-                 ST_SetSRID(ST_MakePoint($15,$14),4326)::geography)
-         RETURNING id`,
-        [
-          p.userId, b.speciesId ?? null, b.commonName, b.scientificName ?? null,
-          b.health, b.heightM ?? null, b.girthM ?? null, b.ageEstimate ?? null,
-          b.description ?? null, b.features, b.confidence ?? null, b.visibility,
-          b.isFuzzy, b.lat, b.lng,
-        ],
-      );
-      const treeId = ins.rows[0].id as string;
+      let treeId: string | null = null;
+      let existing = false;
 
-      // Store exact point (private) + refresh the public fuzzy point.
-      await setTreeLocation(c, treeId, b.lat, b.lng, b.accuracyM ?? null, b.isFuzzy ?? true);
-
-      // Presigned uploads: client PUTs originals straight to the private bucket.
-      const uploads: Array<{ photoId: string; uploadUrl: string; key: string }> = [];
-      for (let i = 0; i < (b.photos ?? []).length; i++) {
-        const ph = (b.photos ?? [])[i];
-        const key = `uploads/${p.userId}/${treeId}/${randomUUID()}.jpg`;
-        const { rows } = await c.query(
-          `INSERT INTO tree_photos (tree_id, organ, storage_key, position, status)
-           VALUES ($1,$2,$3,$4,'pending') RETURNING id`,
-          [treeId, ph.organ, key, i],
+      if (b.clientTxId) {
+        const { rows: existingRows } = await c.query(
+          `SELECT id FROM trees WHERE owner_id = $1 AND client_tx_id = $2 AND deleted_at IS NULL LIMIT 1`,
+          [p.userId, b.clientTxId],
         );
-        uploads.push({
-          photoId: rows[0].id,
-          uploadUrl: await presignUpload(key, ph.contentType ?? 'image/jpeg', req),
-          key,
-        });
+        if (existingRows.length > 0) {
+          treeId = existingRows[0].id as string;
+          existing = true;
+        }
       }
 
-      // Gamification.
+      if (!existing) {
+        const ins = await c.query(
+          `INSERT INTO trees
+             (owner_id, species_id, common_name, scientific_name, health, height_m,
+              girth_m, age_estimate, description, features, confidence, visibility,
+              is_fuzzy, fuzzy_geom, client_tx_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                   ST_SetSRID(ST_MakePoint($15,$14),4326)::geography, $16)
+           RETURNING id`,
+          [
+            p.userId, b.speciesId ?? null, b.commonName, b.scientificName ?? null,
+            b.health, b.heightM ?? null, b.girthM ?? null, b.ageEstimate ?? null,
+            b.description ?? null, b.features, b.confidence ?? null, b.visibility,
+            b.isFuzzy, b.lat, b.lng, b.clientTxId ?? null,
+          ],
+        );
+        treeId = ins.rows[0].id as string;
+
+        // Store exact point (private) + refresh the public fuzzy point.
+        await setTreeLocation(c, treeId, b.lat, b.lng, b.accuracyM ?? null, b.isFuzzy ?? true);
+
+        // Gamification.
+        await c.query(
+          `INSERT INTO points_ledger (user_id, delta, reason, tree_id)
+           VALUES ($1, 10, 'log_tree', $2)`,
+          [p.userId, treeId],
+        );
+        await c.query(
+          `INSERT INTO activity (actor_id, verb, object_type, object_id, metadata)
+           VALUES ($1, 'logged_tree', 'tree', $2, jsonb_build_object('commonName', $3::text))`,
+          [p.userId, treeId, b.commonName],
+        );
+      }
+
+      // Presigned uploads: generate upload URLs for photos (or existing pending ones).
+      const uploads: Array<{ photoId: string; uploadUrl: string; key: string }> = [];
+      if (existing) {
+        const { rows: photoRows } = await c.query(
+          `SELECT id, storage_key FROM tree_photos WHERE tree_id = $1 ORDER BY position`,
+          [treeId],
+        );
+        for (const ph of photoRows) {
+          uploads.push({
+            photoId: ph.id,
+            uploadUrl: await presignUpload(ph.storage_key, 'image/jpeg', req),
+            key: ph.storage_key,
+          });
+        }
+      } else {
+        for (let i = 0; i < (b.photos ?? []).length; i++) {
+          const ph = (b.photos ?? [])[i];
+          const key = `uploads/${p.userId}/${treeId}/${randomUUID()}.jpg`;
+          const { rows } = await c.query(
+            `INSERT INTO tree_photos (tree_id, organ, storage_key, position, status)
+             VALUES ($1,$2,$3,$4,'pending') RETURNING id`,
+            [treeId, ph.organ, key, i],
+          );
+          uploads.push({
+            photoId: rows[0].id,
+            uploadUrl: await presignUpload(key, ph.contentType ?? 'image/jpeg', req),
+            key,
+          });
+        }
+      }
+
       await c.query(
-        `INSERT INTO points_ledger (user_id, delta, reason, tree_id)
-         VALUES ($1, 10, 'log_tree', $2)`,
-        [p.userId, treeId],
-      );
-      await c.query(
-        `INSERT INTO activity (actor_id, verb, object_type, object_id, metadata)
-         VALUES ($1, 'logged_tree', 'tree', $2, jsonb_build_object('commonName', $3::text))`,
-        [p.userId, treeId, b.commonName],
+        `INSERT INTO audit_log (actor_id, action, entity, entity_id, ip, user_agent, metadata)
+         VALUES ($1, 'tree.create', 'tree', $2, $3, $4, $5)`,
+        [
+          p.userId,
+          treeId,
+          req.ip,
+          req.headers['user-agent'] ?? null,
+          JSON.stringify({
+            commonName: b.commonName,
+            scientificName: b.scientificName ?? null,
+            confidence: b.confidence ?? null,
+            clientTxId: b.clientTxId ?? null,
+            visibility: b.visibility,
+          }),
+        ],
       );
 
       const { rows } = await c.query(
@@ -320,6 +370,7 @@ export async function treeRoutes(app: FastifyInstance) {
         [id],
       );
       let saved = false;
+      let liked = false;
       let verificationCount = 0;
       let userVerified = false;
       if (req.principal.userId) {
@@ -328,6 +379,11 @@ export async function treeRoutes(app: FastifyInstance) {
           [req.principal.userId, id],
         );
         saved = (savedRow.rowCount ?? 0) > 0;
+        const likedRow = await c.query(
+          `SELECT 1 FROM tree_likes WHERE user_id = $1 AND tree_id = $2`,
+          [req.principal.userId, id],
+        );
+        liked = (likedRow.rowCount ?? 0) > 0;
         const v = await c.query(
           `SELECT count(*)::int AS n,
                   bool_or(user_id = $2) AS mine
@@ -351,6 +407,7 @@ export async function treeRoutes(app: FastifyInstance) {
           thumbUrl: r.thumb_url && publicUrl(r.thumb_url, mediaBase),
         })),
         saved,
+        liked,
         verificationCount,
         userVerified,
         verificationsRequired: config.VERIFY_VOTES_REQUIRED,
@@ -571,6 +628,96 @@ export async function treeRoutes(app: FastifyInstance) {
     });
   });
 
+  // --- Update tree details (Owner only) ---
+  app.patch('/v1/trees/:id', { preHandler: requireAuth }, async (req) => {
+    const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+    const b = parse(
+      z.object({
+        commonName: z.string().min(1).max(120).optional(),
+        scientificName: z.string().max(120).nullable().optional(),
+        confidence: z.number().min(0).max(100).nullable().optional(),
+        health: z.enum(['healthy', 'stressed', 'diseased', 'dead', 'unknown']).optional(),
+        description: z.string().max(2000).nullable().optional(),
+        visibility: z.enum(['public', 'private', 'unlisted']).optional(),
+      }),
+      req.body,
+    );
+
+    return runAs(req.principal, async (c) => {
+      const check = await c.query(
+        `SELECT owner_id FROM trees WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
+      if (!check.rows[0]) throw notFound('Tree not found');
+      if (check.rows[0].owner_id !== req.principal.userId) {
+        throw forbidden('Only the tree owner can update details');
+      }
+
+      const updates: string[] = [];
+      const values: unknown[] = [id];
+      let idx = 2;
+
+      if (b.commonName !== undefined) {
+        updates.push(`common_name = $${idx++}`);
+        values.push(b.commonName);
+      }
+      if (b.scientificName !== undefined) {
+        updates.push(`scientific_name = $${idx++}`);
+        values.push(b.scientificName);
+      }
+      if (b.confidence !== undefined) {
+        updates.push(`confidence = $${idx++}`);
+        values.push(b.confidence);
+      }
+      if (b.health !== undefined) {
+        updates.push(`health = $${idx++}`);
+        values.push(b.health);
+      }
+      if (b.description !== undefined) {
+        updates.push(`description = $${idx++}`);
+        values.push(b.description);
+      }
+      if (b.visibility !== undefined) {
+        updates.push(`visibility = $${idx++}`);
+        values.push(b.visibility);
+      }
+
+      if (updates.length > 0) {
+        updates.push(`updated_at = now()`);
+        await c.query(
+          `UPDATE trees SET ${updates.join(', ')} WHERE id = $1`,
+          values,
+        );
+        await c.query(
+          `INSERT INTO audit_log (actor_id, action, entity, entity_id, ip, user_agent, metadata)
+           VALUES ($1, 'tree.update', 'tree', $2, $3, $4, $5)`,
+          [
+            req.principal.userId,
+            id,
+            req.ip,
+            req.headers['user-agent'] ?? null,
+            JSON.stringify({
+              commonName: b.commonName,
+              scientificName: b.scientificName,
+              confidence: b.confidence,
+              health: b.health,
+              description: b.description,
+              visibility: b.visibility,
+            }),
+          ],
+        );
+      }
+
+      const updated = await c.query(
+        `SELECT t.*, u.username AS owner_username
+           FROM trees t JOIN users u ON u.id = t.owner_id
+          WHERE t.id = $1`,
+        [id],
+      );
+      return mapTree(updated.rows[0], mediaBaseFromRequest(req));
+    });
+  });
+
   // --- Soft delete (owner/staff via RLS) ---
   app.delete('/v1/trees/:id', { preHandler: requireAuth }, async (req) => {
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
@@ -580,6 +727,17 @@ export async function treeRoutes(app: FastifyInstance) {
         [id],
       );
       if (!r.rowCount) throw notFound('Tree not found');
+      await c.query(
+        `INSERT INTO audit_log (actor_id, action, entity, entity_id, ip, user_agent, metadata)
+         VALUES ($1, 'tree.delete', 'tree', $2, $3, $4, $5)`,
+        [
+          req.principal.userId,
+          id,
+          req.ip,
+          req.headers['user-agent'] ?? null,
+          JSON.stringify({ status: 'removed' }),
+        ],
+      );
       return { ok: true };
     });
   });

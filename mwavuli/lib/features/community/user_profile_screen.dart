@@ -10,13 +10,39 @@ import '../../features/auth/auth_controller.dart';
 import '../../widgets/tree_card.dart';
 
 /// Full-screen public mapper profile — deep-linkable at `/user/:id`.
-class UserProfileScreen extends ConsumerWidget {
+class UserProfileScreen extends ConsumerStatefulWidget {
   const UserProfileScreen({super.key, required this.userId});
 
   final String userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<UserProfileScreen> createState() => _UserProfileScreenState();
+}
+
+class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(publicUserProvider(widget.userId));
+    });
+  }
+
+  @override
+  void didUpdateWidget(UserProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(publicUserProvider(widget.userId));
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.userId;
     final async = ref.watch(publicUserProvider(userId));
 
     return Scaffold(
@@ -44,6 +70,8 @@ class UserProfileScreen extends ConsumerWidget {
         ],
       ),
       body: async.when(
+        skipLoadingOnReload: true,
+        skipLoadingOnRefresh: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, __) => Center(
           child: Column(

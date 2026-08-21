@@ -6,6 +6,7 @@ import 'app/app_state.dart';
 import 'app/router.dart';
 import 'app/theme.dart';
 import 'core/offline/sync_controller.dart';
+import 'core/update/app_update_checker.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,10 +38,12 @@ class MwavuliApp extends ConsumerWidget {
         final osScale = MediaQuery.textScalerOf(context).scale(1.0);
         final double scale =
             (largeText ? osScale * 1.15 : osScale).clamp(0.9, 1.6).toDouble();
-        return MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(textScaler: TextScaler.linear(scale)),
-          child: child!,
+        return AppUpdateChecker(
+          child: MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
         );
       },
     );

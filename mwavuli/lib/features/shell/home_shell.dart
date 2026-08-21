@@ -1,15 +1,67 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/theme.dart';
+import '../../core/navigation/tab_refresh.dart';
 import '../../widgets/offline_banner.dart';
+
+bool _isShellPath(String path) =>
+    path == '/explore' ||
+    path == '/map' ||
+    path == '/community' ||
+    path == '/profile';
+
+/// Full-screen routes pushed above the shell (not tabs).
+bool _isOverlayPath(String path) =>
+    path == '/log' ||
+    path.startsWith('/tree/') ||
+    path.startsWith('/user/');
 
 /// Persistent app frame: offline banner + tab body + thumb-zone bottom bar
 /// with a centered camera FAB (the primary "Log a tree" action).
-class HomeShell extends StatelessWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.shell});
 
   final StatefulNavigationShell shell;
+
+  @override
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends ConsumerState<HomeShell> {
+  GoRouter? _router;
+  String? _lastFullPath;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (!identical(_router, router)) {
+      _router?.routerDelegate.removeListener(_onRouteChange);
+      _router = router;
+      _lastFullPath = router.state.uri.path;
+      _router!.routerDelegate.addListener(_onRouteChange);
+    }
+  }
+
+  void _onRouteChange() {
+    final path = _router?.state.uri.path;
+    if (path == null) return;
+    final previous = _lastFullPath;
+    _lastFullPath = path;
+    if (previous == null) return;
+    // Returning from log / tree / user → refresh the visible tab.
+    if (_isOverlayPath(previous) && _isShellPath(path) && mounted) {
+      refreshShellTab(ref, widget.shell.currentIndex);
+    }
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_onRouteChange);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -19,13 +71,13 @@ class HomeShell extends StatelessWidget {
         child: Column(
           children: [
             const OfflineBanner(),
-            Expanded(child: shell),
+            Expanded(child: widget.shell),
           ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: _CameraFab(onTap: () => context.push('/log')),
-      bottomNavigationBar: _BottomBar(shell: shell),
+      bottomNavigationBar: _BottomBar(shell: widget.shell),
     );
   }
 }
@@ -94,7 +146,7 @@ class _BottomBar extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends ConsumerWidget {
   const _NavItem(this.shell, this.index, this.icon, this.label);
   final StatefulNavigationShell shell;
   final int index;
@@ -102,13 +154,17 @@ class _NavItem extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final selected = shell.currentIndex == index;
     final color = selected ? Palette.green700 : context.earth.ink3;
     return Expanded(
       child: InkResponse(
-        onTap: () => shell.goBranch(index,
-            initialLocation: index == shell.currentIndex),
+        onTap: () {
+          final leaving = shell.currentIndex != index;
+          shell.goBranch(index, initialLocation: !leaving);
+          // Fresh data when entering a tab, or when re-tapping the active tab.
+          refreshShellTab(ref, index);
+        },
         child: Semantics(
           selected: selected,
           button: true,

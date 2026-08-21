@@ -151,6 +151,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       Text('Explore',
                           style: Theme.of(context).textTheme.titleLarge),
                       explore.when(
+                        skipLoadingOnReload: true,
+                        skipLoadingOnRefresh: true,
                         loading: () => Text('Loading…',
                             style: TextStyle(fontSize: 12, color: earth.ink3)),
                         error: (_, __) => Text('Could not load stats',
@@ -289,6 +291,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             padding: const EdgeInsets.symmetric(horizontal: Dims.gutter),
             child: _MapTeaser(
               label: explore.when(
+                skipLoadingOnReload: true,
+                skipLoadingOnRefresh: true,
                 data: (d) => d.mapTeaserLabel(),
                 loading: () => 'Loading map…',
                 error: (_, __) => 'Open the map',
@@ -306,6 +310,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             onAction: () => context.go('/map'),
           ),
           explore.when(
+            skipLoadingOnReload: true,
+            skipLoadingOnRefresh: true,
             loading: () => const SizedBox(
               height: 150,
               child: Center(child: CircularProgressIndicator()),
@@ -345,6 +351,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           ),
           const SectionHeader('Community feed', action: 'Latest'),
           feed.when(
+            skipLoadingOnReload: true,
+            skipLoadingOnRefresh: true,
             loading: () => const Padding(
                 padding: EdgeInsets.all(30),
                 child: Center(child: CircularProgressIndicator())),

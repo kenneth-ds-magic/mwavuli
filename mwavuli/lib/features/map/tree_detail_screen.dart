@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:typed_data';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:dio/dio.dart';
 import '../../app/theme.dart';
+import '../../core/api/api_client.dart';
+import '../../core/camera/photo_capture.dart';
+import '../../core/id/identification_service.dart';
+import '../../core/offline/sync_service.dart';
+import '../../data/models/species.dart';
 import '../../data/models/tree.dart';
 import '../../data/models/tree_comment.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/tree_repository.dart';
-import '../../core/api/api_client.dart';
 import '../../features/auth/auth_controller.dart';
 import '../../widgets/pill.dart';
 import '../../widgets/tree_photo.dart';
@@ -25,7 +31,7 @@ class TreeDetailScreen extends ConsumerStatefulWidget {
 
 class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
   final _commentController = TextEditingController();
-  bool _liked = false;
+  bool? _liked;
   int? _likeCount;
   bool _likeBusy = false;
   bool _commentBusy = false;
@@ -34,12 +40,30 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
   bool _verifyBusy = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshTree();
+    });
+  }
+
+  void _refreshTree() {
+    ref.invalidate(treeDetailProvider(widget.treeId));
+    ref.invalidate(treeCommentsProvider(widget.treeId));
+  }
+
+  @override
   void didUpdateWidget(TreeDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.treeId != widget.treeId) {
       _saved = null;
-      _liked = false;
+      _liked = null;
       _likeCount = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshTree();
+      });
     }
   }
 
@@ -114,7 +138,7 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
     }
   }
 
-  Future<void> _toggleLike(Tree tree) async {
+  Future<void> _toggleLike(Tree tree, bool currentLiked) async {
     if (ref.read(authControllerProvider) != AuthStatus.authenticated) {
       _snack('Log in to like trees');
       return;
@@ -123,10 +147,10 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
     try {
       final repo = ref.read(treeRepositoryProvider);
       final count =
-          _liked ? await repo.unlike(tree.id) : await repo.like(tree.id);
+          currentLiked ? await repo.unlike(tree.id) : await repo.like(tree.id);
       if (!mounted) return;
       setState(() {
-        _liked = !_liked;
+        _liked = !currentLiked;
         _likeCount = count;
         _likeBusy = false;
       });
@@ -238,6 +262,8 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
 
     return Scaffold(
       body: detailAsync.when(
+        skipLoadingOnReload: true,
+        skipLoadingOnRefresh: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (detail) {
@@ -245,6 +271,7 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
             return const Center(child: Text('Tree not found'));
           }
           final tree = detail.tree;
+          final liked = _liked ?? detail.liked;
           final displayLikes = _likeCount ?? tree.likeCount;
           final saved = _saved ?? detail.saved;
           final commentCount =
@@ -329,13 +356,67 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
                         ),
                       ],
                       const SizedBox(height: 10),
-                      Text(tree.commonName,
-                          style: Theme.of(context).textTheme.headlineSmall),
-                      Text(tree.scientificName,
-                          style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: earth.brown,
-                              fontSize: 14)),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  tree.commonName,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall,
+                                ),
+                                if (tree.scientificName.trim().isNotEmpty)
+                                  Text(
+                                    tree.scientificName,
+                                    style: TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                      color: earth.brown,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: _likeBusy
+                                ? null
+                                : () => _toggleLike(tree, liked),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    liked
+                                        ? Icons.favorite_rounded
+                                        : Icons.favorite_border_rounded,
+                                    color:
+                                        liked ? Colors.redAccent : earth.ink2,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    '$displayLikes',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14.5,
+                                      color:
+                                          liked ? Colors.redAccent : earth.ink2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 14),
                       _facts(tree),
                       if (tree.description.trim().isNotEmpty)
@@ -384,35 +465,28 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
                         _commentsSection(commentsAsync),
                       ),
                       const SizedBox(height: 18),
-                      Row(children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _openDirections(tree),
-                            icon: const Icon(Icons.directions_outlined,
-                                size: 19),
-                            label: const Text('Directions'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: OutlinedButton.icon(
-                            onPressed:
-                                _likeBusy ? null : () => _toggleLike(tree),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 44),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _openDirections(tree),
+                              icon: const Icon(Icons.directions_outlined,
+                                  size: 19),
+                              label: const Text('Directions'),
                             ),
-                            icon: Icon(
-                              _liked
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              size: 18,
-                            ),
-                            label: Text('$displayLikes'),
                           ),
-                        ),
-                      ]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _identifyWithPlantnet(
+                                  detail, myId == tree.ownerId),
+                              icon: const Icon(Icons.auto_awesome_rounded,
+                                  size: 19),
+                              label: const Text('Identify Species'),
+                            ),
+                          ),
+                        ],
+                      ),
                       Center(
                         child: TextButton.icon(
                           onPressed: () => _report(tree),
@@ -431,6 +505,57 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
               ),
             ],
           );
+        },
+      ),
+    );
+  }
+
+  Future<void> _identifyWithPlantnet(TreeDetail detail, bool isOwner) async {
+    final tree = detail.tree;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Palette.cream50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _IdentifyResultSheet(
+        tree: tree,
+        detail: detail,
+        isOwner: isOwner,
+        ref: ref,
+        onUpdate: (common, sci, conf) async {
+          final body = <String, dynamic>{
+            'commonName': common,
+            if (sci != null && sci.isNotEmpty) 'scientificName': sci,
+            if (conf != null && conf > 0) 'confidence': conf,
+          };
+
+          try {
+            await ref.read(treeRepositoryProvider).updateTree(tree.id, body);
+            ref.invalidate(treeDetailProvider(widget.treeId));
+            ref.invalidate(feedProvider);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Tree details updated in database!'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          } catch (_) {
+            await ref.read(syncServiceProvider).enqueueUpdate(tree.id, body);
+            ref.invalidate(syncQueueCountProvider);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                      'Saved offline. Will sync when backend is reachable.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
         },
       ),
     );
@@ -593,6 +718,8 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
 
   Widget _commentsSection(AsyncValue<List<TreeComment>> commentsAsync) {
     return commentsAsync.when(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 12),
         child: Center(
@@ -833,6 +960,347 @@ class _RoundBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _IdentifyResultSheet extends StatefulWidget {
+  const _IdentifyResultSheet({
+    required this.tree,
+    required this.detail,
+    required this.isOwner,
+    required this.ref,
+    required this.onUpdate,
+  });
+
+  final Tree tree;
+  final TreeDetail detail;
+  final bool isOwner;
+  final WidgetRef ref;
+  final Future<void> Function(
+          String commonName, String? scientificName, int? confidence)
+      onUpdate;
+
+  @override
+  State<_IdentifyResultSheet> createState() => _IdentifyResultSheetState();
+}
+
+class _IdentifyResultSheetState extends State<_IdentifyResultSheet> {
+  bool _loading = true;
+  bool _serviceUnavailable = false;
+  String _errorMsg = '';
+  List<SpeciesCandidate> _candidates = [];
+  SpeciesCandidate? _selected;
+  bool _updating = false;
+
+  final _manualCommonCtrl = TextEditingController();
+  final _manualSciCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _manualCommonCtrl.text = widget.tree.commonName;
+    _manualSciCtrl.text = widget.tree.scientificName;
+    _runIdentification();
+  }
+
+  @override
+  void dispose() {
+    _manualCommonCtrl.dispose();
+    _manualSciCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _runIdentification() async {
+    setState(() {
+      _loading = true;
+      _serviceUnavailable = false;
+      _errorMsg = '';
+    });
+
+    final dio = Dio();
+    final photos = <CapturedPhoto>[];
+
+    for (final p in widget.detail.photos) {
+      final url = p.url ?? p.thumbUrl;
+      if (url != null && url.isNotEmpty) {
+        try {
+          final res = await dio.get<List<int>>(
+            url,
+            options: Options(
+              responseType: ResponseType.bytes,
+              sendTimeout: const Duration(seconds: 6),
+              receiveTimeout: const Duration(seconds: 10),
+            ),
+          );
+          if (res.data != null && res.data!.isNotEmpty) {
+            photos.add(CapturedPhoto(
+              bytes: Uint8List.fromList(res.data!),
+              organ: p.organ,
+            ));
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (photos.isEmpty && widget.detail.heroImageUrl != null) {
+      try {
+        final res = await dio.get<List<int>>(
+          widget.detail.heroImageUrl!,
+          options: Options(
+            responseType: ResponseType.bytes,
+            sendTimeout: const Duration(seconds: 6),
+            receiveTimeout: const Duration(seconds: 10),
+          ),
+        );
+        if (res.data != null && res.data!.isNotEmpty) {
+          photos.add(CapturedPhoto(
+            bytes: Uint8List.fromList(res.data!),
+            organ: 'whole',
+          ));
+        }
+      } catch (_) {}
+    }
+
+    if (photos.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _serviceUnavailable = true;
+          _errorMsg =
+              'Service currently unavailable. Could not connect to backend to retrieve photo data.';
+        });
+      }
+      return;
+    }
+
+    try {
+      final idService = widget.ref.read(identificationServiceProvider);
+      final response = await idService.identifyPhotos(photos);
+      if (!mounted) return;
+
+      if (response.source == IdentifySource.unavailable ||
+          response.candidates.isEmpty) {
+        setState(() {
+          _loading = false;
+          _serviceUnavailable = true;
+          _errorMsg =
+              'Service currently unavailable. Pl@ntNet API servers are unreachable.';
+        });
+      } else {
+        setState(() {
+          _loading = false;
+          _candidates = response.candidates;
+          _selected = response.candidates.first;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _serviceUnavailable = true;
+          _errorMsg =
+              'Service currently unavailable. Identification network error.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (ctx, scrollController) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_rounded,
+                    color: Palette.green700, size: 24),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Pl@ntNet Species Identification',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(ctx),
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                child: _buildBody(ctx),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildFooter(ctx),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    final earth = context.earth;
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Column(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Downloading photos & analyzing with Pl@ntNet AI...'),
+          ],
+        ),
+      );
+    }
+
+    if (_serviceUnavailable) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 28),
+                SizedBox(width: 8),
+                Text(
+                  'Service currently unavailable',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(_errorMsg, style: TextStyle(color: earth.ink2)),
+            if (widget.isOwner) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Manual Species Details (Owner Update):',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _manualCommonCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Common Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _manualSciCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Scientific Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Top AI Match Candidates:',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+        ),
+        const SizedBox(height: 10),
+        ..._candidates.map((c) {
+          final isSel = _selected == c;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: isSel ? Palette.green50 : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSel ? Palette.green700 : Colors.black12,
+                width: isSel ? 1.5 : 1,
+              ),
+            ),
+            child: ListTile(
+              onTap: widget.isOwner ? () => setState(() => _selected = c) : null,
+              leading: Icon(
+                isSel
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                color: isSel ? Palette.green700 : Colors.grey,
+              ),
+              title: Text(
+                c.commonName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                c.scientificName,
+                style: const TextStyle(fontStyle: FontStyle.italic),
+              ),
+              trailing: Pill(
+                '${c.confidence}% match',
+                tone: PillTone.green,
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    if (_updating) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (widget.isOwner) {
+      return ElevatedButton.icon(
+        onPressed: () async {
+          setState(() => _updating = true);
+          String common;
+          String? sci;
+          int? conf;
+
+          if (_serviceUnavailable) {
+            common = _manualCommonCtrl.text.trim();
+            sci = _manualSciCtrl.text.trim();
+          } else if (_selected != null) {
+            common = _selected!.commonName;
+            sci = _selected!.scientificName;
+            conf = _selected!.confidence;
+          } else {
+            common = widget.tree.commonName;
+          }
+
+          if (common.isEmpty) return;
+
+          Navigator.pop(context);
+          await widget.onUpdate(common, sci, conf);
+        },
+        icon: const Icon(Icons.check_circle_outline_rounded),
+        label: const Text('Update Tree Details'),
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: () => Navigator.pop(context),
+      child: const Text('Close'),
     );
   }
 }

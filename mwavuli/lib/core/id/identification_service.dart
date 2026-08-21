@@ -5,6 +5,8 @@ import '../../data/models/tree.dart';
 import '../api/api_client.dart';
 import '../camera/photo_capture.dart';
 
+import 'direct_plantnet_service.dart';
+
 /// Tree identification from captured organ photos.
 abstract interface class IdentificationService {
   Future<IdentifyResponse> identifyPhotos(List<CapturedPhoto> photos);
@@ -28,8 +30,57 @@ class RemoteIdentificationService implements IdentificationService {
   }
 }
 
+/// Tries the primary backend API (/v1/identify).
+/// If the backend server is offline or unreachable, automatically falls back
+/// to DirectPlantNetService (client-side Pl@ntNet call) or manual entry for offline queueing.
+class FallbackIdentificationService implements IdentificationService {
+  FallbackIdentificationService(this._remoteApi, this._directPlantNet);
+
+  final RemoteIdentificationService _remoteApi;
+  final DirectPlantNetService _directPlantNet;
+
+  @override
+  Future<IdentifyResponse> identifyPhotos(List<CapturedPhoto> photos) async {
+    if (photos.isEmpty) {
+      return const IdentifyResponse(
+        candidates: [],
+        source: IdentifySource.unavailable,
+      );
+    }
+
+    // 1. Try Primary Backend Server API
+    try {
+      final res = await _remoteApi.identifyPhotos(photos);
+      if (res.source != IdentifySource.unavailable) {
+        return res;
+      }
+    } catch (_) {
+      // Backend server is offline or returned network error
+    }
+
+    // 2. Try Direct Pl@ntNet API Fallback if backend server is offline
+    if (_directPlantNet.hasKey) {
+      final directRes = await _directPlantNet.identify(photos);
+      if (directRes.source != IdentifySource.unavailable) {
+        return directRes;
+      }
+    }
+
+    // 3. Fallback for offline flow: allow manual species entry so the log can be enqueued offline
+    return const IdentifyResponse(
+      candidates: [],
+      source: IdentifySource.unavailable,
+    );
+  }
+}
+
+final directPlantNetProvider = Provider((_) => DirectPlantNetService());
+
 final identificationServiceProvider = Provider<IdentificationService>(
-    (ref) => RemoteIdentificationService(ref.watch(apiClientProvider)));
+    (ref) => FallbackIdentificationService(
+          RemoteIdentificationService(ref.watch(apiClientProvider)),
+          ref.watch(directPlantNetProvider),
+        ));
 
 /// Rewards returned after POST /v1/trees.
 class LogRewards {

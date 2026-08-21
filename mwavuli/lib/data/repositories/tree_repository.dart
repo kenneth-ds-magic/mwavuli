@@ -126,6 +126,12 @@ class TreeRepository {
   /// Persist a freshly captured tree locally (the sync queue uploads later).
   Future<void> saveLocal(Tree tree) => _local.upsert(tree);
 
+  Future<Tree> updateTree(String treeId, Map<String, dynamic> body) async {
+    final updated = await _api.updateTree(treeId, body);
+    await _local.upsert(updated);
+    return updated;
+  }
+
   Future<({bool verified, int verificationCount, bool userVerified})> verify(
       String treeId) async {
     return _api.verifyTree(treeId);

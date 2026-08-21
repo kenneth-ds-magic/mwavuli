@@ -29,6 +29,7 @@ class TreeDetail {
     required this.tree,
     this.photos = const [],
     this.saved = false,
+    this.liked = false,
     this.verificationCount = 0,
     this.userVerified = false,
     this.verificationsRequired = 2,
@@ -37,6 +38,7 @@ class TreeDetail {
   final Tree tree;
   final List<TreePhotoRef> photos;
   final bool saved;
+  final bool liked;
   final int verificationCount;
   final bool userVerified;
   final int verificationsRequired;

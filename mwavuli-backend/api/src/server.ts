@@ -16,6 +16,7 @@ import { moderationRoutes } from './routes/moderation';
 import { exploreRoutes } from './routes/explore';
 import { healthRoutes } from './routes/health';
 import { mediaRoutes } from './routes/media';
+import { updatesRoutes } from './routes/updates';
 import './types';
 
 export async function buildApp() {
@@ -73,6 +74,7 @@ export async function buildApp() {
 
   // Routes.
   await healthRoutes(app);
+  await updatesRoutes(app);
   await mediaRoutes(app);
   await authRoutes(app);
   await treeRoutes(app);

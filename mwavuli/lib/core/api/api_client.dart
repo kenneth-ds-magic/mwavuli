@@ -26,6 +26,17 @@ class ApiClient {
             )) {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        var base = options.baseUrl.trim();
+        while (base.endsWith('/')) {
+          base = base.substring(0, base.length - 1);
+        }
+        var path = options.path.trim();
+        if (!path.startsWith('/')) {
+          path = '/$path';
+        }
+        options.baseUrl = base;
+        options.path = path;
+
         final t = await _tokens.accessToken();
         if (t != null) options.headers['authorization'] = 'Bearer $t';
         handler.next(options);
@@ -188,6 +199,7 @@ class ApiClient {
       tree: Tree.fromApi((data['tree'] as Map).cast<String, dynamic>()),
       photos: photos,
       saved: data['saved'] as bool? ?? false,
+      liked: data['liked'] as bool? ?? false,
       verificationCount: (data['verificationCount'] as num?)?.toInt() ?? 0,
       userVerified: data['userVerified'] as bool? ?? false,
       verificationsRequired:
@@ -199,6 +211,12 @@ class ApiClient {
   Future<Map<String, dynamic>> createTree(Map<String, dynamic> body) async {
     final r = await _dio.post('/v1/trees', data: body);
     return (r.data as Map).cast<String, dynamic>();
+  }
+
+  /// Update an existing tree's details (Owner only).
+  Future<Tree> updateTree(String id, Map<String, dynamic> body) async {
+    final r = await _dio.patch('/v1/trees/$id', data: body);
+    return Tree.fromApi((r.data as Map).cast<String, dynamic>());
   }
 
   Future<({double lat, double lng, double? accuracyM})> exactLocation(String treeId) async {
@@ -289,7 +307,7 @@ class ApiClient {
   }
 
   Future<List<ActivityItem>> fetchActivity({
-    int limit = 20,
+    int limit = 10,
     String? before,
   }) async {
     final r = await _dio.get('/v1/activity', queryParameters: {
@@ -317,6 +335,17 @@ class ApiClient {
       items: items,
       hasMore: d['hasMore'] as bool? ?? items.length >= limit,
       period: d['period'] as String? ?? 'week',
+    );
+  }
+
+  Future<({String appVersion, String link, String releaseNotes})>
+      fetchLatestAppVersion() async {
+    final r = await _dio.get('/v1/app/version');
+    final d = (r.data as Map).cast<String, dynamic>();
+    return (
+      appVersion: d['appVersion'] as String? ?? '0.1.0',
+      link: d['link'] as String? ?? '',
+      releaseNotes: d['releaseNotes'] as String? ?? '',
     );
   }
 

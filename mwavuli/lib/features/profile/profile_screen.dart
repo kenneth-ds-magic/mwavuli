@@ -1,8 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../app/app_state.dart';
 import '../../app/theme.dart';
@@ -66,6 +70,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final profileAsync = ref.watch(profileProvider);
     return profileAsync.when(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => _errorState(context, e),
       data: (data) {
@@ -899,32 +905,172 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Export format'),
-        content: const Text('Choose how to download your data.'),
+        content: const Text(
+          'Choose how to download your complete personal data (GDPR Art. 20).',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, 'json'),
-              child: const Text('JSON')),
+            onPressed: () => Navigator.pop(ctx, 'json'),
+            child: const Text('JSON'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, 'csv'),
-              child: const Text('CSV')),
+            onPressed: () => Navigator.pop(ctx, 'csv'),
+            child: const Text('CSV'),
+          ),
         ],
       ),
     );
     if (format == null || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Assembling your GDPR export...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
-      await ref.read(apiClientProvider).exportData(format: format);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Export ready ($format)'),
-            behavior: SnackBarBehavior.floating));
+      final rawData =
+          await ref.read(apiClientProvider).exportData(format: format);
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+
+      String content;
+      if (rawData is String) {
+        content = rawData;
+      } else {
+        const encoder = JsonEncoder.withIndent('  ');
+        content = encoder.convert(rawData);
       }
-    } catch (_) {
+
+      final tempDir = await getTemporaryDirectory();
+      final dateStr = DateTime.now().toIso8601String().split('T').first;
+      final file = File('${tempDir.path}/mwavuli-export-$dateStr.$format');
+      await file.writeAsString(content);
+
+      if (!context.mounted) return;
+      _showExportResultSheet(context, file, content, format);
+    } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Export failed'),
-            behavior: SnackBarBehavior.floating));
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
+  }
+
+  void _showExportResultSheet(
+    BuildContext context,
+    File file,
+    String content,
+    String format,
+  ) {
+    final kbSize = (content.length / 1024).toStringAsFixed(1);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Palette.cream50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (ctx, scrollController) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.check_circle_outline_rounded,
+                      color: Palette.green700, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'GDPR Data Export (${format.toUpperCase()})',
+                      style: Theme.of(ctx).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'File size: $kbSize KB · Saved to temporary directory.',
+                style: TextStyle(fontSize: 13, color: ctx.earth.ink2),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: SelectableText(
+                      content,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11.5,
+                        color: Colors.lightGreenAccent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      label: const Text('Copy to Clipboard'),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: content));
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('Copied export data to clipboard'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _logout(BuildContext context) async {
