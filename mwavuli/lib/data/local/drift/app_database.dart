@@ -44,5 +44,8 @@ class AppDatabase extends _$AppDatabase {
     return row?.payload;
   }
 
+  Future<void> deleteTree(String id) =>
+      (delete(cachedTrees)..where((t) => t.id.equals(id))).go();
+
   Future<void> clearAll() => delete(cachedTrees).go();
 }

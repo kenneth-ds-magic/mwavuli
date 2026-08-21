@@ -847,57 +847,99 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Offline sync', style: Theme.of(ctx).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(
-                queued == 0
-                    ? 'No tree logs waiting to upload.'
-                    : '$queued tree log${queued == 1 ? '' : 's'} queued on this device.',
-                style: TextStyle(fontSize: 14, color: ctx.earth.ink2),
+      builder: (ctx) {
+        var syncing = false;
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Offline sync', style: Theme.of(ctx).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text(
+                      queued == 0
+                          ? 'No tree logs waiting to upload.'
+                          : '$queued tree log${queued == 1 ? '' : 's'} queued on this device.',
+                      style: TextStyle(fontSize: 14, color: ctx.earth.ink2),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: (queued == 0 || syncing)
+                          ? null
+                          : () async {
+                              setModalState(() => syncing = true);
+                              try {
+                                await ref.read(syncServiceProvider).flush(
+                                      ref.read(apiClientProvider),
+                                      ref.read(uploadServiceProvider),
+                                      ref.read(photoCacheProvider),
+                                    );
+                                ref.invalidate(syncQueueCountProvider);
+                                ref.invalidate(profileProvider);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Sync completed'),
+                                          behavior: SnackBarBehavior.floating));
+                                }
+                              } catch (_) {
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Sync failed'),
+                                          behavior: SnackBarBehavior.floating));
+                                }
+                              }
+                            },
+                      child: syncing
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Sync now'),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: queued == 0
-                    ? null
-                    : () async {
-                        Navigator.pop(ctx);
-                        try {
-                          await ref.read(syncServiceProvider).flush(
-                                ref.read(apiClientProvider),
-                                ref.read(uploadServiceProvider),
-                                ref.read(photoCacheProvider),
-                              );
-                          ref.invalidate(syncQueueCountProvider);
-                          ref.invalidate(profileProvider);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Sync attempted'),
-                                    behavior: SnackBarBehavior.floating));
-                          }
-                        } catch (_) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Sync failed'),
-                                    behavior: SnackBarBehavior.floating));
-                          }
-                        }
-                      },
-                child: const Text('Sync now'),
-              ),
-            ],
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  Future<File> _saveExportToDownloads(String content, String format) async {
+    final dateStr = DateTime.now().toIso8601String().split('T').first;
+    final filename = 'mwavuli-export-$dateStr.$format';
+
+    Directory? dir;
+    try {
+      if (Platform.isAndroid) {
+        final downloadDir = Directory('/storage/emulated/0/Download');
+        if (await downloadDir.exists()) {
+          dir = downloadDir;
+        } else {
+          dir = await getExternalStorageDirectory();
+        }
+      } else {
+        dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+      }
+    } catch (_) {}
+    dir ??= await getTemporaryDirectory();
+
+    final savedFile = File('${dir.path}/$filename');
+    await savedFile.writeAsString(content);
+    return savedFile;
   }
 
   Future<void> _exportData(BuildContext context) async {
@@ -956,19 +998,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         content = encoder.convert(rawData);
       }
 
-      final tempDir = await getTemporaryDirectory();
-      final dateStr = DateTime.now().toIso8601String().split('T').first;
-      final file = File('${tempDir.path}/mwavuli-export-$dateStr.$format');
-      await file.writeAsString(content);
+      final file = await _saveExportToDownloads(content, format);
 
       if (!context.mounted) return;
       _showExportResultSheet(context, file, content, format);
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
+        var msg = 'Export failed: $e';
+        if (e.toString().contains('429')) {
+          msg = 'Rate limit reached. Please wait a moment before exporting again.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Export failed: $e'),
+            content: Text(msg),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -983,6 +1026,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     String format,
   ) {
     final kbSize = (content.length / 1024).toStringAsFixed(1);
+    final filename = file.path.split('/').last;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -991,7 +1035,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
+        initialChildSize: 0.75,
         maxChildSize: 0.95,
         minChildSize: 0.4,
         expand: false,
@@ -1015,8 +1059,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'File size: $kbSize KB · Saved to temporary directory.',
-                style: TextStyle(fontSize: 13, color: ctx.earth.ink2),
+                'File size: $kbSize KB · Downloaded to: $filename',
+                style: TextStyle(fontSize: 12.5, color: ctx.earth.ink2),
               ),
               const SizedBox(height: 12),
               Expanded(
@@ -1044,8 +1088,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: Text('Save .$format'.toUpperCase()),
+                      onPressed: () async {
+                        try {
+                          final saved = await _saveExportToDownloads(content, format);
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text('File saved to ${saved.path}'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        } catch (_) {
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('Could not download file'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
                       icon: const Icon(Icons.copy_rounded, size: 18),
-                      label: const Text('Copy to Clipboard'),
+                      label: const Text('Copy'),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: content));
                         ScaffoldMessenger.of(ctx).showSnackBar(
@@ -1057,14 +1128,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Done'),
-                    ),
-                  ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done'),
               ),
             ],
           ),

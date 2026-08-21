@@ -6,6 +6,11 @@ import '../../app/theme.dart';
 import '../api/api_client.dart';
 import '../api/api_config.dart';
 
+import '../api/upload_service.dart';
+import '../camera/photo_capture.dart';
+import '../offline/sync_service.dart';
+import '../../data/local/drift_tree_store.dart';
+
 class AppUpdateChecker extends ConsumerStatefulWidget {
   const AppUpdateChecker({super.key, required this.child});
   final Widget child;
@@ -16,6 +21,7 @@ class AppUpdateChecker extends ConsumerStatefulWidget {
 
 class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
   bool _updateRequired = false;
+  bool _optimizingPostUpdate = false;
   String _latestVersion = '';
   String _updateLink = '';
   String _releaseNotes = '';
@@ -23,7 +29,64 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
   @override
   void initState() {
     super.initState();
-    _checkVersion();
+    _checkVersionAndPostUpdate();
+  }
+
+  Future<void> _checkVersionAndPostUpdate() async {
+    await _handlePostUpdateSyncAndCleanup();
+    await _checkVersion();
+  }
+
+  Future<void> _handlePostUpdateSyncAndCleanup() async {
+    try {
+      final storage = ref.read(secureStorageProvider);
+      final currentVersion = ApiConfig.appVersion.trim();
+      final lastVersion = await storage.read(key: 'mwavuli.last_processed_version');
+      if (lastVersion == null) {
+        // First fresh install: seed current version without running post-update cleanup
+        await storage.write(key: 'mwavuli.last_processed_version', value: currentVersion);
+        return;
+      }
+
+      if (lastVersion != currentVersion) {
+        if (mounted) {
+          setState(() {
+            _optimizingPostUpdate = true;
+          });
+        }
+
+        // 1. Validate and clean missing/corrupted queued records
+        final syncService = ref.read(syncServiceProvider);
+        await syncService.validateAndCleanQueue();
+
+        // 2. Sync pending offline queue to server if online
+        try {
+          await syncService.flush(
+            ref.read(apiClientProvider),
+            ref.read(uploadServiceProvider),
+            ref.read(photoCacheProvider),
+          );
+        } catch (_) {}
+
+        // 3. Clear old local cache to ensure fresh data after app update
+        await ref.read(localTreeStoreProvider).clear();
+
+        // 4. Save current version as processed
+        await storage.write(key: 'mwavuli.last_processed_version', value: currentVersion);
+
+        if (mounted) {
+          setState(() {
+            _optimizingPostUpdate = false;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _optimizingPostUpdate = false;
+        });
+      }
+    }
   }
 
   Future<void> _checkVersion() async {
@@ -60,6 +123,59 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
 
   @override
   Widget build(BuildContext context) {
+    if (_optimizingPostUpdate) {
+      return Stack(
+        children: [
+          widget.child,
+          PopScope(
+            canPop: false,
+            child: Scaffold(
+              backgroundColor: Colors.black.withValues(alpha: 0.85),
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 380),
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: Palette.cream50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Palette.green800),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Optimizing Mwavuli (v${ApiConfig.appVersion})',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Palette.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Syncing offline queue, validating data records, and clearing cache...',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Palette.ink2,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (!_updateRequired) {
       return widget.child;
     }

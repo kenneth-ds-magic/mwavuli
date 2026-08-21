@@ -44,6 +44,43 @@ class SyncService {
 
   Future<int> pendingCount() async => (await _read()).length;
 
+  /// Validate queued items; if an item is missing required fields (e.g. missing body,
+  /// missing commonName on create, or missing treeId on update), delete it.
+  Future<int> validateAndCleanQueue() async {
+    final q = await _read();
+    if (q.isEmpty) return 0;
+    final valid = <Map<String, dynamic>>[];
+    var removedCount = 0;
+    for (final item in q) {
+      final type = item['type'] as String? ?? 'create';
+      if (type == 'update') {
+        final treeId = item['treeId'] as String?;
+        final body = item['body'];
+        if (treeId != null &&
+            treeId.isNotEmpty &&
+            body is Map &&
+            body.isNotEmpty) {
+          valid.add(item);
+        } else {
+          removedCount++;
+        }
+      } else {
+        final body = item['body'];
+        if (body is Map &&
+            body['commonName'] != null &&
+            (body['commonName'] as String).trim().isNotEmpty) {
+          valid.add(item);
+        } else {
+          removedCount++;
+        }
+      }
+    }
+    if (removedCount > 0) {
+      await _write(valid);
+    }
+    return removedCount;
+  }
+
   /// Upload every queued log: create the tree, then PUT each cached photo to
   /// its presigned URL. Successful items (and their cache files) are removed;
   /// failures stay queued for the next attempt.

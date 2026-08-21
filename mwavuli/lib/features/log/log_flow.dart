@@ -415,19 +415,16 @@ class _LogFlowState extends ConsumerState<LogFlow> {
         _step = 4;
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not save tree: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      // ONLY fallback to offline queueing if createTree failed on the server.
       if (!createdOnServer) {
         try {
           await _queue(body);
           if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Server unreachable. Saved to offline queue!'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
           setState(() {
             _submitting = false;
             _result = LogSubmitResult(
@@ -439,14 +436,30 @@ class _LogFlowState extends ConsumerState<LogFlow> {
             );
             _step = 4;
           });
-        } catch (_) {
-          if (!mounted) return;
-          setState(() => _submitting = false);
+          return;
+        } catch (queueErr) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Could not save tree offline: $queueErr'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {
-          setState(() => _submitting = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not save tree: $e'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
+      }
+
+      if (mounted) {
+        setState(() => _submitting = false);
       }
     }
   }

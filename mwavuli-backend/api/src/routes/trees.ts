@@ -83,7 +83,9 @@ export const TREE_PHOTO_COLS = `
 export const TREE_COLS = `
   t.id, t.owner_id, u.display_name AS contributor, t.common_name, t.scientific_name,
   t.height_m, t.girth_m, t.age_estimate, t.health, t.features, t.confidence,
-  t.verified, t.visibility, t.is_fuzzy, t.like_count, t.comment_count,
+  t.verified, t.visibility, t.is_fuzzy,
+  (SELECT count(*)::int FROM likes WHERE tree_id = t.id) AS like_count,
+  t.comment_count,
   t.description, t.created_at,
   ST_Y(t.fuzzy_geom::geometry) AS fuzzy_lat, ST_X(t.fuzzy_geom::geometry) AS fuzzy_lng`;
 
@@ -583,8 +585,12 @@ export async function treeRoutes(app: FastifyInstance) {
          ON CONFLICT DO NOTHING`,
         [id, req.principal.userId],
       );
-      const { rows } = await c.query('SELECT like_count FROM trees WHERE id = $1', [id]);
-      return { liked: true, likeCount: rows[0]?.like_count ?? 0 };
+      await c.query(
+        `UPDATE trees SET like_count = (SELECT count(*)::int FROM likes WHERE tree_id = $1) WHERE id = $1`,
+        [id],
+      );
+      const { rows } = await c.query('SELECT count(*)::int AS count FROM likes WHERE tree_id = $1', [id]);
+      return { liked: true, likeCount: (rows[0]?.count as number) ?? 1 };
     });
   });
 
@@ -594,8 +600,12 @@ export async function treeRoutes(app: FastifyInstance) {
       await c.query('DELETE FROM likes WHERE tree_id = $1 AND user_id = $2', [
         id, req.principal.userId,
       ]);
-      const { rows } = await c.query('SELECT like_count FROM trees WHERE id = $1', [id]);
-      return { liked: false, likeCount: rows[0]?.like_count ?? 0 };
+      await c.query(
+        `UPDATE trees SET like_count = (SELECT count(*)::int FROM likes WHERE tree_id = $1) WHERE id = $1`,
+        [id],
+      );
+      const { rows } = await c.query('SELECT count(*)::int AS count FROM likes WHERE tree_id = $1', [id]);
+      return { liked: false, likeCount: (rows[0]?.count as number) ?? 0 };
     });
   });
 

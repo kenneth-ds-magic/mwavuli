@@ -313,7 +313,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             skipLoadingOnReload: true,
             skipLoadingOnRefresh: true,
             loading: () => const SizedBox(
-              height: 150,
+              height: 155,
               child: Center(child: CircularProgressIndicator()),
             ),
             error: (_, __) => const SizedBox.shrink(),
@@ -326,7 +326,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 );
               }
               return SizedBox(
-                height: 150,
+                height: 160,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding:
@@ -611,7 +611,7 @@ class _SpeciesMini extends StatelessWidget {
                 children: [
                   TreePhoto(
                     tag,
-                    height: 92,
+                    height: 86,
                     imageUrl: imageUrl,
                     photoStatus: photoStatus,
                   ),
@@ -634,15 +634,21 @@ class _SpeciesMini extends StatelessWidget {
                     ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
-                child: Text(name,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                  child: Text(
+                    name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Palette.green900)),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Palette.green900,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

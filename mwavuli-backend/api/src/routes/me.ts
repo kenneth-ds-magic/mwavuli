@@ -277,7 +277,7 @@ export async function meRoutes(app: FastifyInstance) {
   // the worker + signed URL for large accounts. Rate-limited hard.
   app.post(
     '/v1/me/export',
-    { preHandler: requireAuth, config: { rateLimit: { max: 3, timeWindow: 3_600_000 } } },
+    { preHandler: requireAuth, config: { rateLimit: { max: 60, timeWindow: 60_000 } } },
     async (req, reply) => {
       const { format } = parse(
         z.object({ format: z.enum(['json', 'csv']).default('json') }),

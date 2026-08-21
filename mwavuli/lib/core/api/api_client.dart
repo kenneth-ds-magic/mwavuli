@@ -219,6 +219,11 @@ class ApiClient {
     return Tree.fromApi((r.data as Map).cast<String, dynamic>());
   }
 
+  /// Soft-delete a tree (Owner or admin only).
+  Future<void> deleteTree(String id) async {
+    await _dio.delete('/v1/trees/$id');
+  }
+
   Future<({double lat, double lng, double? accuracyM})> exactLocation(String treeId) async {
     final r = await _dio.get('/v1/trees/$treeId/exact-location');
     return (

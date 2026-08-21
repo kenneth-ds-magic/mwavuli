@@ -10,6 +10,8 @@ abstract interface class LocalTreeStore {
   Future<List<Tree>> all();
   Future<Tree?> byId(String id);
   Future<void> upsert(Tree tree);
+  Future<void> delete(String id);
+  Future<void> clear();
 }
 
 class DriftTreeStore implements LocalTreeStore {
@@ -36,6 +38,12 @@ class DriftTreeStore implements LocalTreeStore {
     await _db.upsertTree(tree.id, jsonEncode(tree.toCacheJson()));
   }
 
+  @override
+  Future<void> delete(String id) async {
+    await _db.deleteTree(id);
+  }
+
+  @override
   Future<void> clear() => _db.clearAll();
 }
 

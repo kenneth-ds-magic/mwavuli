@@ -132,6 +132,11 @@ class TreeRepository {
     return updated;
   }
 
+  Future<void> deleteTree(String treeId) async {
+    await _api.deleteTree(treeId);
+    await _local.delete(treeId);
+  }
+
   Future<({bool verified, int verificationCount, bool userVerified})> verify(
       String treeId) async {
     return _api.verifyTree(treeId);
