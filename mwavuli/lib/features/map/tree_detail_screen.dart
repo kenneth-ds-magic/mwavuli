@@ -1226,35 +1226,38 @@ class _IdentifyResultSheetState extends State<_IdentifyResultSheet> {
         const SizedBox(height: 10),
         ..._candidates.map((c) {
           final isSel = _selected == c;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
               color: isSel ? Palette.green50 : Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isSel ? Palette.green700 : Colors.black12,
-                width: isSel ? 1.5 : 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: isSel ? Palette.green700 : Colors.black12,
+                  width: isSel ? 1.5 : 1,
+                ),
               ),
-            ),
-            child: ListTile(
-              onTap: widget.isOwner ? () => setState(() => _selected = c) : null,
-              leading: Icon(
-                isSel
-                    ? Icons.radio_button_checked_rounded
-                    : Icons.radio_button_off_rounded,
-                color: isSel ? Palette.green700 : Colors.grey,
-              ),
-              title: Text(
-                c.commonName,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                c.scientificName,
-                style: const TextStyle(fontStyle: FontStyle.italic),
-              ),
-              trailing: Pill(
-                '${c.confidence}% match',
-                tone: PillTone.green,
+              child: ListTile(
+                onTap: widget.isOwner ? () => setState(() => _selected = c) : null,
+                leading: Icon(
+                  isSel
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: isSel ? Palette.green700 : Colors.grey,
+                ),
+                title: Text(
+                  c.commonName,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  c.scientificName,
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+                trailing: Pill(
+                  '${c.confidence}% match',
+                  tone: PillTone.green,
+                ),
               ),
             ),
           );
