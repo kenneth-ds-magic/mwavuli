@@ -8,9 +8,11 @@ import '../../app/app_state.dart';
 import '../../app/theme.dart';
 import '../../data/models/community.dart';
 import '../../data/repositories/community_repository.dart';
+import '../../data/repositories/explore_repository.dart';
 import '../../features/auth/auth_controller.dart';
 import '../../widgets/activity_row.dart';
 import '../../widgets/section_header.dart';
+import '../../widgets/tree_card.dart';
 
 class CommunityScreen extends ConsumerStatefulWidget {
   const CommunityScreen({super.key});
@@ -52,6 +54,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     final auth = ref.watch(authControllerProvider);
     final feed = ref.watch(communityProvider);
     final activity = ref.watch(activityFeedProvider);
+    final treeFeed = ref.watch(exploreFeedProvider);
 
     ref.listen(communityProvider, (prev, next) {
       if (next.isLoading || next.isRefreshing) {
@@ -96,6 +99,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             });
             ref.invalidate(communityProvider);
             ref.invalidate(activityFeedProvider);
+            ref.invalidate(exploreFeedProvider);
           },
           child: ListView(
             controller: _scrollController,
@@ -306,6 +310,71 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                               .read(activityFeedProvider.notifier)
                               .loadMore(),
                           child: const Text('Load more activity'),
+                        ),
+                      ),
+                  ];
+                },
+              ),
+              SectionHeader(
+                'Community trees',
+                action: 'Latest',
+              ),
+              ...treeFeed.when(
+                skipLoadingOnReload: true,
+                skipLoadingOnRefresh: true,
+                loading: () => [
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ],
+                error: (_, __) => [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: Dims.gutter),
+                    child: Text('Could not load community trees.',
+                        style: TextStyle(color: Color(0xFF77694F), fontSize: 13)),
+                  ),
+                ],
+                data: (page) {
+                  if (page.trees.isEmpty) {
+                    return [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: Dims.gutter),
+                        child: Text('No community trees logged yet.',
+                            style: TextStyle(color: Color(0xFF77694F), fontSize: 13)),
+                      ),
+                    ];
+                  }
+                  return [
+                    for (final t in page.trees)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                            Dims.gutter, 0, Dims.gutter, 14),
+                        child: TreeCard(
+                          tree: t,
+                          onTap: () => context.push('/tree/${t.id}'),
+                        ),
+                      ),
+                    if (page.loadingMore)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    else if (page.hasMore)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: Dims.gutter, vertical: 8),
+                        child: OutlinedButton(
+                          onPressed: () => ref
+                              .read(exploreFeedProvider.notifier)
+                              .loadMore(),
+                          child: const Text('Load more trees'),
                         ),
                       ),
                   ];

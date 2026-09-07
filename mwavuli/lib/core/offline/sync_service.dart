@@ -24,9 +24,14 @@ class SyncService {
   Future<void> _write(List<Map<String, dynamic>> q) =>
       _storage.write(key: _key, value: jsonEncode(q));
 
-  /// Queue a create-request plus the cache paths of its photos.
-  Future<int> enqueue(Map<String, dynamic> body, List<String> photoPaths) async {
-    final q = await _read()..add({'type': 'create', 'body': body, 'photoPaths': photoPaths});
+  /// Queue a create-request plus the cache paths of its photos and optional local offline tree ID.
+  Future<int> enqueue(Map<String, dynamic> body, List<String> photoPaths, {String? offlineTreeId}) async {
+    final q = await _read()..add({
+      'type': 'create',
+      'body': body,
+      'photoPaths': photoPaths,
+      if (offlineTreeId != null) 'offlineTreeId': offlineTreeId,
+    });
     await _write(q);
     return q.length;
   }
@@ -81,27 +86,46 @@ class SyncService {
     return removedCount;
   }
 
-  /// Upload every queued log: create the tree, then PUT each cached photo to
-  /// its presigned URL. Successful items (and their cache files) are removed;
-  /// failures stay queued for the next attempt.
-  Future<void> flush(ApiClient api, UploadService upload, PhotoCache cache) async {
+  /// Upload queued logs. If [targetTreeId] is provided, attempts to flush that item
+  /// and returns true if the upload succeeded. Updates [localStore] if provided.
+  Future<bool> flush(
+    ApiClient api,
+    UploadService upload,
+    PhotoCache cache, {
+    dynamic localStore,
+    String? targetTreeId,
+  }) async {
     final q = await _read();
-    if (q.isEmpty) return;
+    if (q.isEmpty) return true;
+
     final remaining = <Map<String, dynamic>>[];
+    var targetFoundAndSuccess = false;
+    var anySuccess = false;
+
     for (final item in q) {
+      final itemOfflineId = item['offlineTreeId'] as String? ?? item['treeId'] as String?;
       try {
         final type = item['type'] as String? ?? 'create';
         if (type == 'update') {
           final treeId = item['treeId'] as String?;
           final body = (item['body'] as Map).cast<String, dynamic>();
           if (treeId != null) {
-            await api.updateTree(treeId, body);
+            final updated = await api.updateTree(treeId, body);
+            if (localStore != null) {
+              await localStore.upsert(updated);
+            }
+            if (itemOfflineId == targetTreeId || treeId == targetTreeId) {
+              targetFoundAndSuccess = true;
+            }
+            anySuccess = true;
           }
         } else {
           final body = (item['body'] as Map).cast<String, dynamic>();
           final paths = (item['photoPaths'] as List?)?.cast<String>() ?? const [];
           final res = await api.createTree(body);
+          final serverTreeId = (res['tree'] as Map?)?['id'] as String? ?? res['id'] as String?;
           final uploads = (res['uploads'] as List?) ?? const [];
+
           for (var i = 0; i < uploads.length && i < paths.length; i++) {
             final uploadMap = (uploads[i] as Map).cast<String, dynamic>();
             final bytes = await cache.read(paths[i]);
@@ -117,12 +141,31 @@ class SyncService {
           for (final p in paths) {
             await cache.delete(p);
           }
+
+          if (localStore != null && itemOfflineId != null) {
+            await localStore.delete(itemOfflineId);
+            if (serverTreeId != null) {
+              try {
+                final detail = await api.fetchTreeDetail(serverTreeId);
+                await localStore.upsert(detail.tree);
+              } catch (_) {}
+            }
+          }
+
+          if (itemOfflineId == targetTreeId || targetTreeId == null) {
+            targetFoundAndSuccess = true;
+          }
+          anySuccess = true;
         }
       } catch (_) {
         remaining.add(item);
       }
     }
     await _write(remaining);
+    if (targetTreeId != null) {
+      return targetFoundAndSuccess;
+    }
+    return anySuccess || remaining.length < q.length;
   }
 }
 

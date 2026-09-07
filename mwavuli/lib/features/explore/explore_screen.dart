@@ -409,7 +409,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       child: OutlinedButton(
                         onPressed: () =>
                             ref.read(exploreFeedProvider.notifier).loadMore(),
-                        child: const Text('Load more'),
+                        child: const Text('Load more trees'),
                       ),
                     ),
                 ],

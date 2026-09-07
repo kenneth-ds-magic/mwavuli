@@ -7,12 +7,15 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:dio/dio.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/upload_service.dart';
 import '../../core/camera/photo_capture.dart';
 import '../../core/id/identification_service.dart';
 import '../../core/offline/sync_service.dart';
+import '../../data/local/drift_tree_store.dart';
 import '../../data/models/species.dart';
 import '../../data/models/tree.dart';
 import '../../data/models/tree_comment.dart';
+import '../../data/repositories/explore_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/tree_repository.dart';
 import '../../features/auth/auth_controller.dart';
@@ -214,30 +217,48 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
     }
     final reason = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Report this entry',
-                  style: Theme.of(ctx).textTheme.titleMedium),
-            ),
-            for (final (code, label) in const [
-              ('inaccurate_id', 'Inaccurate identification'),
-              ('wrong_location', 'Wrong location'),
-              ('spam', 'Spam'),
-              ('offensive', 'Offensive content'),
-              ('sensitive_species', 'Sensitive species exposure'),
-              ('privacy', 'Privacy concern'),
-              ('other', 'Other'),
-            ])
-              ListTile(
-                title: Text(label),
-                onTap: () => Navigator.pop(ctx, code),
+      backgroundColor: Palette.cream50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.8,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Text(
+                  'Report this entry',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
-          ],
+              const Divider(height: 1),
+              for (final (code, label) in const [
+                ('inaccurate_id', 'Inaccurate identification'),
+                ('wrong_location', 'Wrong location'),
+                ('spam', 'Spam'),
+                ('offensive', 'Offensive content'),
+                ('sensitive_species', 'Sensitive species exposure'),
+                ('privacy', 'Privacy concern'),
+                ('other', 'Other'),
+              ])
+                ListTile(
+                  title: Text(label, style: const TextStyle(fontSize: 15)),
+                  trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+                  onTap: () => Navigator.pop(ctx, code),
+                ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -301,6 +322,11 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
                           : Icons.bookmark_border_rounded,
                       () => _toggleSave(tree, saved),
                     ),
+                  if (!tree.synced)
+                    _RoundBtn(
+                      Icons.cloud_upload_rounded,
+                      () => _syncOfflineTree(context, tree),
+                    ),
                   _RoundBtn(Icons.ios_share_rounded, () => _share(tree)),
                   const SizedBox(width: 6),
                 ],
@@ -317,6 +343,72 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (!tree.synced) ...[
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Palette.gold100.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Palette.gold500),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.cloud_off_rounded,
+                                  color: Palette.green900, size: 24),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Saved in Offline Queue',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: Palette.ink),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'This tree log is waiting to be uploaded to Mwavuli.',
+                                      style: TextStyle(
+                                          fontSize: 12, color: Palette.ink2),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Material(
+                                color: Palette.green700,
+                                borderRadius: BorderRadius.circular(10),
+                                child: InkWell(
+                                  onTap: () => _syncOfflineTree(context, tree),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.cloud_upload_rounded,
+                                            size: 18, color: Colors.white),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Sync Now',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       Row(children: [
                         if (tree.verified)
                           const Pill('ID verified',
@@ -505,6 +597,186 @@ class _TreeDetailScreenState extends ConsumerState<TreeDetailScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _syncOfflineTree(BuildContext context, Tree tree) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          backgroundColor: Palette.cream50,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: const Padding(
+            padding: EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Palette.green800),
+                SizedBox(height: 20),
+                Text(
+                  'Syncing Tree Log...',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Palette.ink),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Connecting to Mwavuli server and uploading tree details & photos...',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(fontSize: 13, color: Palette.ink2, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    bool success = false;
+    String? errorDetail;
+    try {
+      final syncService = ref.read(syncServiceProvider);
+      final api = ref.read(apiClientProvider);
+      final upload = ref.read(uploadServiceProvider);
+      final cache = ref.read(photoCacheProvider);
+      final localStore = ref.read(localTreeStoreProvider);
+
+      success = await syncService.flush(
+        api,
+        upload,
+        cache,
+        targetTreeId: tree.id,
+        localStore: localStore,
+      );
+    } catch (e) {
+      success = false;
+      errorDetail = e.toString();
+    }
+
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    ref.invalidate(feedProvider);
+    ref.invalidate(exploreFeedProvider);
+    ref.invalidate(exploreProvider);
+    ref.invalidate(syncQueueCountProvider);
+    ref.invalidate(treeDetailProvider(widget.treeId));
+
+    if (success) {
+      _showSyncSuccessModal(context, tree);
+    } else {
+      _showSyncFailureModal(context, errorDetail);
+    }
+  }
+
+  void _showSyncSuccessModal(BuildContext context, Tree tree) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Palette.cream50,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Palette.green100,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle_rounded,
+                    color: Palette.green700, size: 48),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Tree Uploaded Successfully!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Palette.ink),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Your tree log "${tree.commonName}" is now published live on the Mwavuli community network.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 13.5, color: Palette.ink2, height: 1.4),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Palette.green700),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Great!'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSyncFailureModal(BuildContext context, String? errorDetail) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Palette.cream50,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.cloud_off_rounded,
+                    color: Colors.orange.shade800, size: 48),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Server Unreachable',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Palette.ink),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Could not connect to the Mwavuli server right now. Your tree remains safely saved in the offline queue and will automatically sync once your connection is restored.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13.5, color: Palette.ink2, height: 1.4),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Palette.brown700),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Keep Saved Offline'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

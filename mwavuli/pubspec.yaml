@@ -1,7 +1,7 @@
 name: mwavuli
 description: "mwavuli — identify, map, and celebrate the world's trees, together."
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

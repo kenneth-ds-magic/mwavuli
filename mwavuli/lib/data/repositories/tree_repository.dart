@@ -61,8 +61,9 @@ class TreeRepository {
     double? lng,
     int radiusM = 50000,
   }) async {
+    List<Tree> items = [];
     try {
-      final remote = await _api.fetchFeed(
+      items = await _api.fetchFeed(
         bbox: bbox,
         before: before,
         limit: limit,
@@ -72,14 +73,25 @@ class TreeRepository {
         lng: lng,
         radiusM: radiusM,
       );
-      for (final t in remote) {
+      for (final t in items) {
         await _local.upsert(t);
       }
-      return remote;
     } catch (_) {
       if (before != null) rethrow;
-      return _local.all();
+      items = await _local.all();
     }
+
+    // Always merge offline queued trees (synced == false) so they are visible in feed when offline or online
+    final allLocal = await _local.all();
+    final queuedLocal = allLocal.where((t) => !t.synced).toList();
+    if (queuedLocal.isNotEmpty) {
+      final existingIds = items.map((t) => t.id).toSet();
+      final unsyncedToAdd =
+          queuedLocal.where((t) => !existingIds.contains(t.id)).toList();
+      return [...unsyncedToAdd, ...items];
+    }
+
+    return items;
   }
 
   Future<Tree?> byId(String id) async {

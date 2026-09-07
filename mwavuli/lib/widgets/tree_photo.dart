@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
@@ -41,22 +43,46 @@ class TreePhoto extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = _gradients[tag] ?? _gradients['oak']!;
     final radius = borderRadius ?? BorderRadius.zero;
-    final url = resolveMediaUrl(imageUrl);
+    final rawUrl = imageUrl?.trim();
+    final isLocalPath = rawUrl != null &&
+        rawUrl.isNotEmpty &&
+        (rawUrl.startsWith('/') || rawUrl.startsWith('file://'));
+    final url = isLocalPath ? rawUrl : resolveMediaUrl(imageUrl);
+
+    Widget imageWidget;
+    if (url != null && url.isNotEmpty) {
+      if (isLocalPath) {
+        final filePath =
+            url.startsWith('file://') ? Uri.parse(url).toFilePath() : url;
+        final file = File(filePath);
+        if (file.existsSync()) {
+          imageWidget = Image.file(
+            file,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                _placeholder(colors, processing: false),
+          );
+        } else {
+          imageWidget = _placeholder(colors, processing: _processing);
+        }
+      } else {
+        imageWidget = Image.network(
+          url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              _placeholder(colors, processing: false),
+        );
+      }
+    } else {
+      imageWidget = _placeholder(colors, processing: _processing);
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final stack = Stack(
           fit: StackFit.expand,
           children: [
-            if (url != null && url.isNotEmpty)
-              Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    _placeholder(colors, processing: false),
-              )
-            else
-              _placeholder(colors, processing: _processing),
+            imageWidget,
             if (child != null) child!,
           ],
         );

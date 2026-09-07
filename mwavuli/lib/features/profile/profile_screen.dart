@@ -1115,7 +1115,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 label: Text('Save .$format ...'.toUpperCase()),
                 onPressed: () async {
                   try {
-                    await Share.shareXFiles(
+                    await SharePlus.instance.share(
                       [XFile(file.path)],
                       text: 'Mwavuli GDPR Data Export ($filename)',
                     );

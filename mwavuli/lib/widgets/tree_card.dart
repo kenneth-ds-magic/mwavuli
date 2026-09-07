@@ -66,7 +66,10 @@ class TreeCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (tree.verified)
+                    if (!tree.synced)
+                      const Pill('Offline Queued',
+                          icon: Icons.cloud_off_rounded, tone: PillTone.gold)
+                    else if (tree.verified)
                       const Pill('ID verified',
                           icon: Icons.check_rounded, tone: PillTone.green),
                   ]),

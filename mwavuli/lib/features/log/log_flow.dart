@@ -470,8 +470,44 @@ class _LogFlowState extends ConsumerState<LogFlow> {
     for (final p in _photos) {
       paths.add(await cache.save(p.bytes));
     }
-    final n = await ref.read(syncServiceProvider).enqueue(body, paths);
+    final offlineId = 'offline_${const Uuid().v4()}';
+    final n = await ref.read(syncServiceProvider).enqueue(
+          body,
+          paths,
+          offlineTreeId: offlineId,
+        );
     ref.read(syncQueueProvider.notifier).state = n;
+
+    final loc = _location;
+    final offlineTree = Tree(
+      id: offlineId,
+      commonName: body['commonName'] as String? ?? 'Tree Log',
+      scientificName: body['scientificName'] as String? ?? '',
+      photoTag: 'oak',
+      heightMeters: (body['heightMeters'] as num?)?.toDouble() ?? 0,
+      ageEstimate: body['ageEstimate'] as String? ?? '—',
+      health: TreeHealth.values.firstWhere(
+          (h) => h.name == body['health'],
+          orElse: () => TreeHealth.healthy),
+      girthMeters: (body['girthMeters'] as num?)?.toDouble() ?? 0,
+      confidence: 0,
+      verified: false,
+      contributor: 'Me (Offline Log)',
+      description:
+          body['notes'] as String? ?? body['description'] as String? ?? '',
+      exactLocation: loc,
+      fuzzyLocation: loc,
+      isFuzzy: false,
+      visibility: TreeVisibility.public,
+      synced: false,
+      thumbUrl: paths.isNotEmpty ? paths.first : null,
+      createdAt: DateTime.now(),
+    );
+
+    await ref.read(treeRepositoryProvider).saveLocal(offlineTree);
+    ref.invalidate(feedProvider);
+    ref.invalidate(exploreFeedProvider);
+    ref.invalidate(exploreProvider);
   }
 
   @override

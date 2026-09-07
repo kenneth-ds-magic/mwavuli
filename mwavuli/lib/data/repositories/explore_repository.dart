@@ -61,7 +61,7 @@ class ExploreFeedPage {
 }
 
 class ExploreFeedNotifier extends AsyncNotifier<ExploreFeedPage> {
-  static const pageSize = 15;
+  static const pageSize = 10;
 
   @override
   Future<ExploreFeedPage> build() async {
@@ -106,14 +106,16 @@ class ExploreFeedNotifier extends AsyncNotifier<ExploreFeedPage> {
             radiusM: query.radiusM,
           );
       final seen = current.trees.map((t) => t.id).toSet();
+      final newItems = next.where((t) => !seen.contains(t.id)).toList();
       final merged = [
         ...current.trees,
-        ...next.where((t) => !seen.contains(t.id)),
+        ...newItems,
       ];
       state = AsyncData(
         ExploreFeedPage(
           trees: merged,
-          hasMore: next.length >= pageSize,
+          hasMore: next.length >= pageSize && newItems.isNotEmpty,
+          loadingMore: false,
         ),
       );
     } catch (_) {
