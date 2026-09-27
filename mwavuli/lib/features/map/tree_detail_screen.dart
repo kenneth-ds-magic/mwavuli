@@ -1502,7 +1502,6 @@ class _IdentifyResultSheetState extends State<_IdentifyResultSheet> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
               color: isSel ? Palette.green50 : Colors.white,
-              borderRadius: BorderRadius.circular(12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(

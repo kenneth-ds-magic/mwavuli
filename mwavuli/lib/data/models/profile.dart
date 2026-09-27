@@ -153,6 +153,7 @@ class ProfileData {
     required this.trees,
     required this.topSpecies,
     required this.contributions,
+    this.rawApiData,
   });
 
   final MeProfile profile;
@@ -165,6 +166,7 @@ class ProfileData {
   final List<Tree> trees;
   final List<TopSpeciesStat> topSpecies;
   final List<MonthlyContribution> contributions;
+  final Map<String, dynamic>? rawApiData;
 
   factory ProfileData.fromApi(Map<String, dynamic> j) {
     final profile = MeProfile.fromApi(
@@ -196,6 +198,7 @@ class ProfileData {
             .map(MonthlyContribution.fromApi)
             .toList(),
       ),
+      rawApiData: j,
     );
   }
 }

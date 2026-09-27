@@ -95,6 +95,7 @@ class SyncService {
     dynamic localStore,
     String? targetTreeId,
   }) async {
+    await validateAndCleanQueue();
     final q = await _read();
     if (q.isEmpty) return true;
 
@@ -112,7 +113,7 @@ class SyncService {
           if (treeId != null) {
             final updated = await api.updateTree(treeId, body);
             if (localStore != null) {
-              await localStore.upsert(updated);
+              await localStore.upsert(updated, fromServer: true);
             }
             if (itemOfflineId == targetTreeId || treeId == targetTreeId) {
               targetFoundAndSuccess = true;
@@ -122,33 +123,48 @@ class SyncService {
         } else {
           final body = (item['body'] as Map).cast<String, dynamic>();
           final paths = (item['photoPaths'] as List?)?.cast<String>() ?? const [];
-          final res = await api.createTree(body);
-          final serverTreeId = (res['tree'] as Map?)?['id'] as String? ?? res['id'] as String?;
-          final uploads = (res['uploads'] as List?) ?? const [];
 
+          String? serverTreeId = item['serverTreeId'] as String?;
+          List<dynamic> uploads = (item['uploads'] as List?) ?? const [];
+
+          // Step 1: Create tree record on server if not already created
+          if (serverTreeId == null) {
+            final res = await api.createTree(body);
+            serverTreeId = (res['tree'] as Map?)?['id'] as String? ?? res['id'] as String?;
+            uploads = (res['uploads'] as List?) ?? const [];
+            item['serverTreeId'] = serverTreeId;
+            item['uploads'] = uploads;
+          }
+
+          // Step 2: Upload all associated photos as a required transaction.
+          // If any photo upload fails, an exception is thrown, so fromServer remains FALSE in SQLite!
           for (var i = 0; i < uploads.length && i < paths.length; i++) {
             final uploadMap = (uploads[i] as Map).cast<String, dynamic>();
             final bytes = await cache.read(paths[i]);
             final photoId = uploadMap['photoId'] as String?;
             if (bytes != null && photoId != null) {
-              try {
-                await api.uploadPhoto(photoId, bytes);
-              } catch (_) {
-                // Individual photo upload error does not force re-creation of tree.
-              }
+              await api.uploadPhoto(photoId, bytes);
             }
           }
+
+          // Step 3: Delete local cached photo files ONLY after all photos uploaded successfully
           for (final p in paths) {
             await cache.delete(p);
           }
 
+          // Step 4: Transaction complete — update SQLite store to mark fromServer = true
           if (localStore != null && itemOfflineId != null) {
             await localStore.delete(itemOfflineId);
             if (serverTreeId != null) {
               try {
-                final detail = await api.fetchTreeDetail(serverTreeId);
-                await localStore.upsert(detail.tree);
+                localStore.aliasOfflineId(itemOfflineId, serverTreeId);
               } catch (_) {}
+              try {
+                final detail = await api.fetchTreeDetail(serverTreeId);
+                await localStore.upsert(detail.tree, fromServer: true);
+              } catch (_) {
+                // Fallback: if detail fetch fails, tree will be updated on next feed pull
+              }
             }
           }
 
@@ -157,7 +173,10 @@ class SyncService {
           }
           anySuccess = true;
         }
-      } catch (_) {
+      } catch (e, st) {
+        // Log error so developer can see exact reason (e.g. 401 token expired, schema mismatch, etc.)
+        // ignore: avoid_print
+        print('SYNC_SERVICE_ERROR: $e\n$st');
         remaining.add(item);
       }
     }

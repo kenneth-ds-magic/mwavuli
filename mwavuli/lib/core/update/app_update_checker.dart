@@ -15,6 +15,27 @@ class AppUpdateChecker extends ConsumerStatefulWidget {
   const AppUpdateChecker({super.key, required this.child});
   final Widget child;
 
+  static bool isVersionHigher(String latestStr, String currentStr) {
+    if (latestStr.trim().isEmpty) return false;
+    final cleanLatest = latestStr.replaceAll(RegExp(r'^[vV]'), '').split('+').first.trim();
+    final cleanCurrent = currentStr.replaceAll(RegExp(r'^[vV]'), '').split('+').first.trim();
+
+    final latestParts = cleanLatest.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+    final currentParts = cleanCurrent.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+
+    final maxLen = latestParts.length > currentParts.length ? latestParts.length : currentParts.length;
+
+    for (int i = 0; i < maxLen; i++) {
+      final latestVal = i < latestParts.length ? latestParts[i] : 0;
+      final currentVal = i < currentParts.length ? currentParts[i] : 0;
+
+      if (latestVal > currentVal) return true;
+      if (latestVal < currentVal) return false;
+    }
+
+    return false;
+  }
+
   @override
   ConsumerState<AppUpdateChecker> createState() => _AppUpdateCheckerState();
 }
@@ -98,7 +119,7 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
       final current = ApiConfig.appVersion.trim();
       final latestVer = latest.appVersion.trim();
 
-      if (latestVer.isNotEmpty && current != latestVer) {
+      if (AppUpdateChecker.isVersionHigher(latestVer, current)) {
         setState(() {
           _updateRequired = true;
           _latestVersion = latestVer;
@@ -141,22 +162,22 @@ class _AppUpdateCheckerState extends ConsumerState<AppUpdateChecker> {
                       color: Palette.cream50,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Column(
+                    child: const Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: Palette.green800),
-                        const SizedBox(height: 20),
+                        CircularProgressIndicator(color: Palette.green800),
+                        SizedBox(height: 20),
                         Text(
                           'Optimizing Mwavuli (v${ApiConfig.appVersion})',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: Palette.ink,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
+                        SizedBox(height: 8),
+                        Text(
                           'Syncing offline queue, validating data records, and clearing cache...',
                           textAlign: TextAlign.center,
                           style: TextStyle(

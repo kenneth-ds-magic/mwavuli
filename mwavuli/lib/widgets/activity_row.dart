@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../app/theme.dart';
 import '../data/models/community.dart';
 
-/// A single community activity line — tappable when linked to a tree or user.
+/// A single community activity line — styled with card elevation & micro-chips.
 class ActivityRow extends ConsumerWidget {
   const ActivityRow(this.item, {super.key, this.onBeforeNavigate});
 
@@ -32,67 +32,104 @@ class ActivityRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final (icon, color) = switch (item.kind) {
       ActivityKind.badge => (Icons.star_rounded, Palette.gold500),
-      ActivityKind.verify => (Icons.check_rounded, Palette.green600),
+      ActivityKind.verify => (Icons.verified_rounded, Palette.green600),
       ActivityKind.comment =>
         (Icons.mode_comment_outlined, Palette.brown600),
-      ActivityKind.follow => (Icons.person_add_outlined, Palette.green700),
-      ActivityKind.log => (Icons.eco_outlined, Palette.green600),
+      ActivityKind.follow => (Icons.person_add_rounded, Palette.green700),
+      ActivityKind.log => (Icons.park_rounded, Palette.green600),
       ActivityKind.other => (Icons.notifications_outlined, Palette.brown600),
     };
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Dims.gutter, 10, Dims.gutter, 0),
+    return Container(
+      margin: const EdgeInsets.fromLTRB(Dims.gutter, 6, Dims.gutter, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x1F241D14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Material(
         color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: item.isTappable ? () => _onTap(context, ref) : null,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                    radius: 19,
-                    backgroundColor: color,
-                    child: Icon(icon, color: Colors.white, size: 19)),
-                const SizedBox(width: 11),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.text,
-                          style: const TextStyle(
-                              fontSize: 13.5, height: 1.45)),
+                      Text(
+                        item.text,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                          color: Palette.ink,
+                        ),
+                      ),
                       if (item.quote != null)
                         Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                              color: const Color(0xFFF4EDDD),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: Text('“${item.quote}”',
-                              style: const TextStyle(
-                                  fontSize: 12.5,
-                                  color: Color(0xFF4F4536))),
+                            color: Palette.cream100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Palette.cream200),
+                          ),
+                          child: Text(
+                            '“${item.quote}”',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Palette.ink2,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                         ),
-                      if (item.timeAgo.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(item.timeAgo,
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          if (item.timeAgo.isNotEmpty)
+                            Text(
+                              item.timeAgo,
                               style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: Color(0xFF77694F))),
-                        ),
-                      if (item.isTappable)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text('Tap to view',
+                                fontSize: 11.5,
+                                color: Palette.ink3,
+                              ),
+                            ),
+                          if (item.isTappable) ...[
+                            const Spacer(),
+                            const Text(
+                              'View detail →',
                               style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Palette.green700)),
-                        ),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Palette.green700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ),

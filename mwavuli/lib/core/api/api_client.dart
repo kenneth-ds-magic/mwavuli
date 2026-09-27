@@ -92,6 +92,24 @@ class ApiClient {
     await _saveTokens(r.data);
   }
 
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
+    final r = await _dio.post('/v1/auth/forgot-password', data: {'email': email});
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final r = await _dio.post('/v1/auth/reset-password', data: {
+      'email': email,
+      'code': code,
+      'newPassword': newPassword,
+    });
+    return r.data as Map<String, dynamic>;
+  }
+
   Future<void> logout() async {
     final rt = await _tokens.refreshToken();
     if (rt != null) {
@@ -370,6 +388,22 @@ class ApiClient {
       if (bio != null) 'bio': bio.isEmpty ? null : bio,
       if (locationLabel != null)
         'locationLabel': locationLabel.isEmpty ? null : locationLabel,
+    });
+    return (r.data as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> updateCredentials({
+    String? username,
+    String? email,
+    required String currentPassword,
+    String? newPassword,
+  }) async {
+    final r = await _dio.patch('/v1/me/credentials', data: {
+      if (username != null && username.isNotEmpty) 'username': username,
+      if (email != null && email.isNotEmpty) 'email': email,
+      'currentPassword': currentPassword,
+      if (newPassword != null && newPassword.isNotEmpty)
+        'newPassword': newPassword,
     });
     return (r.data as Map).cast<String, dynamic>();
   }

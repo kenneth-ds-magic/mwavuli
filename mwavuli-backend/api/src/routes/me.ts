@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { runAs } from '../db';
-import { notFound } from '../lib/errors';
+import { badRequest, conflict, notFound } from '../lib/errors';
 import { parse } from '../lib/validate';
 import { requireAuth } from '../auth/plugin';
+import { hashPassword, verifyPassword } from '../auth/password';
 import { assembleExport, treesToCsv } from '../services/export';
 import { presignUpload, publicUrl, mediaBaseFromRequest } from '../services/storage';
 import { mapTree, TREE_COLS, TREE_PHOTO_COLS } from './trees';
@@ -15,6 +16,13 @@ const UpdateMe = z.object({
   displayName: z.string().min(1).max(80).optional(),
   bio: z.string().max(500).nullable().optional(),
   locationLabel: z.string().max(120).nullable().optional(),
+});
+
+const UpdateCredentials = z.object({
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/).optional(),
+  email: z.string().email().optional(),
+  currentPassword: z.string().min(1, 'Current password is required.'),
+  newPassword: z.string().min(8).max(200).optional(),
 });
 
 function mapProfile(row: Record<string, unknown>, mediaBase?: string) {
@@ -185,6 +193,71 @@ export async function meRoutes(app: FastifyInstance) {
         params,
       );
       if (!rows[0]) throw notFound('User not found');
+      return { profile: mapProfile(rows[0], mediaBase) };
+    }),
+  );
+
+  app.patch('/v1/me/credentials', { preHandler: requireAuth }, async (req) =>
+    runAs(req.principal, async (c) => {
+      const mediaBase = mediaBaseFromRequest(req);
+      const b = parse(UpdateCredentials, req.body);
+      const uid = req.principal.userId;
+
+      const { rows: userRows } = await c.query(
+        `SELECT id, email, username, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`,
+        [uid],
+      );
+      const u = userRows[0];
+      if (!u) throw notFound('User not found');
+
+      if (!verifyPassword(b.currentPassword, u.password_hash)) {
+        throw badRequest('Current password is incorrect.');
+      }
+
+      const sets: string[] = [];
+      const params: unknown[] = [];
+
+      if (b.username && b.username !== u.username) {
+        const dupe = await c.query(
+          `SELECT 1 FROM users WHERE username = $1 AND id != $2 AND deleted_at IS NULL`,
+          [b.username, uid],
+        );
+        if (dupe.rowCount) throw conflict('Username is already taken.');
+        params.push(b.username);
+        sets.push(`username = $${params.length}`);
+      }
+
+      if (b.email) {
+        const newEmail = b.email.toLowerCase().trim();
+        if (newEmail !== u.email) {
+          const dupe = await c.query(
+            `SELECT 1 FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL`,
+            [newEmail, uid],
+          );
+          if (dupe.rowCount) throw conflict('Email is already in use by another account.');
+          params.push(newEmail);
+          sets.push(`email = $${params.length}`);
+        }
+      }
+
+      if (b.newPassword && b.newPassword.trim().length > 0) {
+        const newHash = hashPassword(b.newPassword);
+        params.push(newHash);
+        sets.push(`password_hash = $${params.length}`);
+      }
+
+      if (!sets.length) {
+        return { profile: mapProfile(u, mediaBase) };
+      }
+
+      params.push(uid);
+      const { rows } = await c.query(
+        `UPDATE users SET ${sets.join(', ')}, updated_at = now()
+          WHERE id = $${params.length} AND deleted_at IS NULL
+          RETURNING id, email, username, display_name, bio, avatar_url, role,
+                    points, level, location_label, created_at`,
+        params,
+      );
       return { profile: mapProfile(rows[0], mediaBase) };
     }),
   );

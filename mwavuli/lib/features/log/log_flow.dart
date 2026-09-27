@@ -994,11 +994,11 @@ class _LogFlowState extends ConsumerState<LogFlow> {
                         ? 'Tap the map to drop a pin, or search above'
                         : 'Tap map to adjust · pin is exact (server fuzzes if enabled)',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
-                      shadows: const [
+                      shadows: [
                         Shadow(blurRadius: 6, color: Colors.black54),
                       ],
                     ),
@@ -1051,7 +1051,7 @@ class _LogFlowState extends ConsumerState<LogFlow> {
           onChanged: (v) => setState(() => _visibility = v),
         ),
         const SizedBox(height: 14),
-        _Note(
+        const _Note(
           icon: Icons.verified_user_outlined,
           bg: Palette.green50,
           fg: Palette.green800,
@@ -1562,10 +1562,10 @@ class _PrivacyCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0x24241D14))),
       child: Row(children: [
-        Expanded(
+        const Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text('🔒 Fuzzy location',
                   style: TextStyle(
                       fontSize: 13.5, fontWeight: FontWeight.w700)),

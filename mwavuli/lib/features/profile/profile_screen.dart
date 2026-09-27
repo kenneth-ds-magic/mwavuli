@@ -19,8 +19,12 @@ import '../../core/offline/sync_service.dart';
 import '../../core/prefs/user_prefs.dart';
 import '../../data/models/profile.dart';
 import '../../data/models/tree.dart';
+import '../../data/local/drift_tree_store.dart';
 import '../../data/repositories/profile_repository.dart';
+import '../../data/repositories/tree_repository.dart';
+import '../../data/repositories/explore_repository.dart';
 import '../auth/auth_controller.dart';
+import '../auth/auth_errors.dart';
 import '../../widgets/location_autocomplete_field.dart';
 import '../../widgets/pill.dart';
 import '../../widgets/tree_photo.dart';
@@ -94,13 +98,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 48, color: Palette.danger),
-            const SizedBox(height: 12),
-            const Text('Could not load your profile.'),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () => ref.invalidate(profileProvider),
-              child: const Text('Retry'),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Palette.danger.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.cloud_off_rounded, size: 48, color: Palette.danger),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Could not load your profile',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Palette.ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Check your connection or try again.',
+              style: TextStyle(fontSize: 13, color: context.earth.ink3),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => ref.invalidate(profileProvider),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Retry'),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Palette.danger,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => _logout(context),
+                  icon: const Icon(Icons.logout_rounded, size: 18),
+                  label: const Text('Log Out'),
+                ),
+              ],
             ),
           ],
         ),
@@ -112,204 +152,397 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final earth = context.earth;
     final joined = DateFormat.y().format(data.profile.createdAt);
     final primaryBadge =
-        data.badges.isNotEmpty ? data.badges.first.name : 'Citizen scientist';
+        data.badges.isNotEmpty ? data.badges.first.name : 'Citizen Scientist';
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              height: 96,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [Palette.green600, Palette.green800]),
-              ),
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: CircleAvatar(
-                  backgroundColor: Colors.white.withValues(alpha: 0.9),
-                  child: IconButton(
-                    icon: const Icon(Icons.settings_outlined,
-                        color: Palette.green800),
-                    onPressed: () => setState(() => _tab = 2),
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      backgroundColor: Palette.cream50,
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          // Header Cover Banner & User Profile Identity
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 130,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Palette.green900, Palette.green700, Palette.green800],
+                  ),
+                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+                ),
+                alignment: Alignment.topRight,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        _glassIconButton(
+                          icon: Icons.share_outlined,
+                          tooltip: 'Share profile',
+                          onTap: () => _shareProfile(context, data),
+                        ),
+                        const SizedBox(width: 8),
+                        _glassIconButton(
+                          icon: Icons.settings_outlined,
+                          tooltip: 'Settings',
+                          onTap: () => setState(() => _tab = 2),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 18,
-              bottom: -38,
-              child: _ProfileAvatar(profile: data.profile),
-            ),
-          ],
-        ),
-        const SizedBox(height: 46),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Dims.gutter),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(data.profile.displayName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge),
-              Text(
-                '${data.profile.handle}'
-                '${data.profile.locationLabel == null ? '' : ' · ${data.profile.locationLabel}'}'
-                ' · joined $joined',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: earth.ink3),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                data.profile.bio?.isNotEmpty == true
-                    ? data.profile.bio!
-                    : 'No bio yet.',
-                style: TextStyle(fontSize: 13.5, color: earth.ink2, height: 1.5),
-              ),
-              const SizedBox(height: 10),
-              Wrap(spacing: 7, children: [
-                Pill(primaryBadge,
-                    icon: Icons.eco_rounded, tone: PillTone.green),
-                Pill('Level ${data.profile.level} · ${data.profile.levelName}',
-                    tone: PillTone.gold),
-              ]),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 22,
-                runSpacing: 10,
-                children: [
-                  _stat('${data.following}', 'Following',
-                      onTap: () => _showSocialList(context, 'Following', true)),
-                  _stat('${data.followers}', 'Followers',
-                      onTap: () => _showSocialList(context, 'Followers', false)),
-                  _stat('${data.treeCount}', 'Trees',
-                      onTap: () => setState(() => _tab = 0)),
-                ],
-              ),
-              const SizedBox(height: 14),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stackActions = constraints.maxWidth < 300;
-                  final edit = SizedBox(
-                    width: stackActions ? double.infinity : null,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _editProfile(context, data.profile),
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Edit profile'),
+              Positioned(
+                left: Dims.gutter,
+                bottom: -44,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 4),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: _ProfileAvatar(profile: data.profile),
                     ),
-                  );
-                  final share = OutlinedButton(
-                    onPressed: () => _shareProfile(context, data),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(52, 44),
-                    ),
-                    child: const Icon(Icons.ios_share_rounded, size: 18),
-                  );
-                  if (stackActions) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        edit,
-                        const SizedBox(height: 8),
-                        share,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: edit),
-                      const SizedBox(width: 10),
-                      share,
-                    ],
-                  );
-                },
+                  ],
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        _segmented(),
-        const SizedBox(height: 8),
-        if (_tab == 0) _treesPane(context, data.trees),
-        if (_tab == 1) _statsPane(context, data),
-        if (_tab == 2) _settingsPane(context),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  Widget _stat(String v, String k, {VoidCallback? onTap}) {
-    final child = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(v,
-            style: const TextStyle(
-                fontFamily: 'RobotoSlab',
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: Palette.green900)),
-        Text(k,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF77694F))),
-      ],
-    );
-    if (onTap == null) return child;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: child,
+          const SizedBox(height: 52),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Dims.gutter),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            data.profile.displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'RobotoSlab',
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: Palette.green900,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Palette.green50,
+                                  borderRadius: BorderRadius.circular( dimsPill ),
+                                  border: Border.all(color: Palette.green300),
+                                ),
+                                child: Text(
+                                  data.profile.handle,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Palette.green800,
+                                  ),
+                                ),
+                              ),
+                              if (data.profile.locationLabel != null &&
+                                  data.profile.locationLabel!.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                const Icon(Icons.place_outlined, size: 14, color: Palette.green700),
+                                const SizedBox(width: 2),
+                                Flexible(
+                                  child: Text(
+                                    data.profile.locationLabel!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 12.5, color: earth.ink3),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _editProfile(context, data.profile),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 38),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        side: BorderSide(color: earth.line, width: 1.5),
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 16, color: Palette.green800),
+                      label: const Text(
+                        'Edit',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: Palette.green900),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  data.profile.bio?.isNotEmpty == true
+                      ? data.profile.bio!
+                      : 'No bio added yet.',
+                  style: TextStyle(fontSize: 13.5, color: earth.ink2, height: 1.45),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today_outlined, size: 13, color: earth.ink3),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Joined $joined',
+                      style: TextStyle(fontSize: 12, color: earth.ink3, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Pill(primaryBadge, icon: Icons.eco_rounded, tone: PillTone.green),
+                    Pill('Level ${data.profile.level} · ${data.profile.levelName}', tone: PillTone.gold),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                // Metric Stats Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: _socialStatCard(
+                        count: '${data.following}',
+                        label: 'Following',
+                        icon: Icons.people_outline_rounded,
+                        onTap: () => _showSocialList(context, 'Following', true),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _socialStatCard(
+                        count: '${data.followers}',
+                        label: 'Followers',
+                        icon: Icons.groups_outlined,
+                        onTap: () => _showSocialList(context, 'Followers', false),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _socialStatCard(
+                        count: '${data.treeCount}',
+                        label: 'Trees Logged',
+                        icon: Icons.park_outlined,
+                        onTap: () => setState(() => _tab = 0),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _segmentedTabBar(),
+          const SizedBox(height: 12),
+          if (_tab == 0) _treesPane(context, data.trees),
+          if (_tab == 1) _statsPane(context, data),
+          if (_tab == 2) _settingsPane(context, data.profile),
+          const SizedBox(height: 32),
+        ],
       ),
     );
   }
 
-  Widget _segmented() {
-    Widget seg(String label, int i) => Expanded(
-          child: GestureDetector(
-            onTap: () => setState(() => _tab = i),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _tab == i ? Palette.green700 : Colors.white,
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(
-                    color: _tab == i ? Palette.green700 : context.earth.line),
+  static const double dimsPill = 999;
+
+  Widget _glassIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.22),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        icon: Icon(icon, color: Colors.white, size: 20),
+        tooltip: tooltip,
+        onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _socialStatCard({
+    required String count,
+    required String label,
+    required IconData icon,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x1F241D14)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: Palette.green700),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  count,
+                  style: const TextStyle(
+                    fontFamily: 'RobotoSlab',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Palette.green900,
+                  ),
+                ),
               ),
-              child: Text(label,
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF77694F), fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _segmentedTabBar() {
+    Widget tabButton(String title, IconData icon, int index) {
+      final active = _tab == index;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _tab = index),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? Palette.green700 : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: active ? Palette.green700 : context.earth.line,
+                width: 1.5,
+              ),
+              boxShadow: active
+                  ? [
+                      BoxShadow(
+                        color: Palette.green700.withValues(alpha: 0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      )
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: active ? Colors.white : context.earth.ink2,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  title,
                   style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: _tab == i ? Colors.white : context.earth.ink2)),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: active ? Colors.white : context.earth.ink2,
+                  ),
+                ),
+              ],
             ),
           ),
-        );
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Dims.gutter),
-      child: Row(children: [
-        seg('My trees', 0),
-        seg('Stats', 1),
-        seg('Settings', 2),
-      ]),
+      child: Row(
+        children: [
+          tabButton('My Trees', Icons.park_rounded, 0),
+          const SizedBox(width: 8),
+          tabButton('Impact', Icons.bar_chart_rounded, 1),
+          const SizedBox(width: 8),
+          tabButton('Settings', Icons.tune_rounded, 2),
+        ],
+      ),
     );
   }
 
   Widget _treesPane(BuildContext context, List<Tree> trees) {
     if (trees.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: Text('No trees logged yet.')),
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Palette.green50,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.park_outlined, size: 40, color: Palette.green700),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'No trees logged yet',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Palette.green900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tap the camera button below to log your first tree!',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: context.earth.ink3),
+            ),
+          ],
+        ),
       );
     }
+
     final bodyWidth = MediaQuery.sizeOf(context).width - Dims.gutter * 2;
     final crossAxisCount = bodyWidth >= 520 ? 3 : 2;
-    final aspectRatio = bodyWidth < 340 ? 0.88 : 0.92;
+    final aspectRatio = bodyWidth < 340 ? 0.85 : 0.90;
 
     return GridView.count(
       crossAxisCount: crossAxisCount,
@@ -323,7 +556,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         for (final t in trees)
           GestureDetector(
             onTap: () => context.push('/tree/${t.id}'),
-            child: Card(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x1F241D14)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0A000000),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  )
+                ],
+              ),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -343,23 +588,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(9),
+                    padding: const EdgeInsets.all(10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(t.commonName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Palette.green900)),
+                        Text(
+                          t.commonName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Palette.green900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
                         Text(
                           t.createdAt == null
                               ? t.health.label
                               : '${t.health.label} · ${DateFormat.MMMd().format(t.createdAt!)}',
                           style: const TextStyle(
-                              fontSize: 11, color: Color(0xFF77694F)),
+                            fontSize: 11,
+                            color: Color(0xFF77694F),
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
@@ -380,15 +632,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _tag(String s) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(999)),
-        child: Text(s,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700)),
+          color: Colors.black.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          s,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       );
 
   Widget _statsPane(BuildContext context, ProfileData data) {
@@ -397,10 +653,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .where((l) => l != null)
         .length;
     final tiles = [
-      _statTile('${data.treeCount}', 'Trees'),
-      _statTile('${data.speciesCount}', 'Species'),
-      _statTile('$parks', 'Mapped'),
-      _statTile(_formatPoints(data.points), 'Points'),
+      _statTile('${data.treeCount}', 'Trees Logged', Icons.park_outlined),
+      _statTile('${data.speciesCount}', 'Species Identified', Icons.eco_outlined),
+      _statTile('$parks', 'Mapped Locations', Icons.map_outlined),
+      _statTile(_formatPoints(data.points), 'Impact Points', Icons.military_tech_outlined),
     ];
 
     return Padding(
@@ -416,7 +672,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   Expanded(child: tiles[0]),
                   Expanded(child: tiles[1]),
                 ]),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Row(children: [
                   Expanded(child: tiles[2]),
                   Expanded(child: tiles[3]),
@@ -425,29 +681,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 Row(children: [
                   for (final tile in tiles) Expanded(child: tile),
                 ]),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               _ContributionsChart(contributions: data.contributions),
               if (data.badges.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                const Text('Badges',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 22),
+                const Row(
+                  children: [
+                    Icon(Icons.workspace_premium_rounded, size: 18, color: Palette.gold600),
+                    SizedBox(width: 6),
+                    Text(
+                      'Earned Badges',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Palette.green900),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
                     for (final b in data.badges)
-                      Pill(b.name,
-                          icon: Icons.military_tech_outlined, tone: PillTone.gold),
+                      Pill(b.name, icon: Icons.military_tech_outlined, tone: PillTone.gold),
                   ],
                 ),
               ],
               if (data.topSpecies.isNotEmpty) ...[
-                const SizedBox(height: 20),
-                const Text('Top species',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 10),
-                ..._topSpeciesBars(data.topSpecies, maxLabelWidth: narrow ? 56 : 74),
+                const SizedBox(height: 22),
+                const Row(
+                  children: [
+                    Icon(Icons.pie_chart_outline_rounded, size: 18, color: Palette.green700),
+                    SizedBox(width: 6),
+                    Text(
+                      'Top Species Logged',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Palette.green900),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._topSpeciesBars(data.topSpecies, maxLabelWidth: narrow ? 60 : 80),
               ],
             ],
           );
@@ -461,8 +732,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return '$points';
   }
 
-  List<Widget> _topSpeciesBars(List<TopSpeciesStat> species,
-      {double maxLabelWidth = 74}) {
+  List<Widget> _topSpeciesBars(List<TopSpeciesStat> species, {double maxLabelWidth = 80}) {
     final max = species.map((s) => s.count).reduce((a, b) => a > b ? a : b);
     return [
       for (var i = 0; i < species.length; i++)
@@ -476,47 +746,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     ];
   }
 
-  Widget _statTile(String v, String k) => Container(
+  Widget _statTile(String v, String k, IconData icon) => Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0x24241D14))),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0x1F241D14)),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(icon, size: 18, color: Palette.green700),
+            const SizedBox(height: 6),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(v,
-                  style: const TextStyle(
-                      fontFamily: 'RobotoSlab',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Palette.green800)),
-            ),
-            const SizedBox(height: 4),
-            Text(k,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
+              child: Text(
+                v,
                 style: const TextStyle(
-                    fontSize: 11, color: Color(0xFF77694F))),
+                  fontFamily: 'RobotoSlab',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Palette.green900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              k,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF77694F), fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       );
 
-  Widget _speciesBar(String k, int n, double frac, Color c,
-      {double labelWidth = 74}) => Padding(
-        padding: const EdgeInsets.only(bottom: 9),
+  Widget _speciesBar(String k, int n, double frac, Color c, {double labelWidth = 80}) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
         child: Row(children: [
           SizedBox(
-              width: labelWidth,
-              child: Text(k,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600))),
+            width: labelWidth,
+            child: Text(
+              k,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Palette.ink),
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(999),
@@ -528,110 +807,167 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
           SizedBox(
-              width: 26,
-              child: Text('$n',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700))),
+            width: 28,
+            child: Text(
+              '$n',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Palette.green900),
+            ),
+          ),
         ]),
       );
 
-  Widget _settingsPane(BuildContext context) {
+  Widget _settingsPane(BuildContext context, MeProfile profile) {
     final earth = context.earth;
     final queueAsync = ref.watch(syncQueueCountProvider);
     final queued = queueAsync.maybeWhen(data: (n) => n, orElse: () => 0);
     final fuzzyAsync = ref.watch(defaultFuzzyLocationProvider);
     final defaultFuzzy = fuzzyAsync.maybeWhen(data: (v) => v, orElse: () => true);
 
-    Widget group(String t) => Padding(
-          padding: const EdgeInsets.fromLTRB(2, 16, 2, 6),
-          child: Text(t.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 11,
+    Widget groupTitle(String title, IconData icon) => Padding(
+          padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: Palette.green700),
+              const SizedBox(width: 6),
+              Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 11.5,
                   letterSpacing: 0.8,
                   fontWeight: FontWeight.w700,
-                  color: earth.ink3)),
+                  color: earth.ink3,
+                ),
+              ),
+            ],
+          ),
         );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Dims.gutter),
       child: Column(
         children: [
-          group('Accessibility'),
-          _SwitchRow(
-            icon: Icons.text_fields_rounded,
-            title: 'Larger text',
-            subtitle: 'Scale UI text up (WCAG 1.4.4)',
-            value: ref.watch(largeTextProvider),
-            onChanged: (v) =>
-                ref.read(largeTextProvider.notifier).state = v,
-          ),
-          _SwitchRow(
-            icon: Icons.contrast_rounded,
-            title: 'High contrast',
-            subtitle: 'Stronger colour contrast',
-            value: ref.watch(highContrastProvider),
-            onChanged: (v) =>
-                ref.read(highContrastProvider.notifier).state = v,
-          ),
-          _SwitchRow(
-            icon: Icons.wifi_off_rounded,
-            title: 'Simulate offline',
-            subtitle: 'Force offline mode for testing sync',
-            value: ref.watch(simulateOfflineProvider),
-            onChanged: (v) =>
-                ref.read(simulateOfflineProvider.notifier).state = v,
-          ),
-          group('Privacy & location'),
-          _SwitchRow(
-            icon: Icons.place_outlined,
-            title: 'Default to fuzzy location',
-            subtitle: 'New tree logs publish ±500 m by default',
-            value: defaultFuzzy,
-            onChanged: fuzzyAsync.isLoading
-                ? null
-                : (v) => ref.read(defaultFuzzyLocationProvider.notifier).set(v),
-          ),
-          _SettingRow(
-            Icons.lock_outline_rounded,
-            'Photo EXIF stripping',
-            'GPS removed on-device and on the server · Always on',
-            () => _showInfoDialog(
-              context,
-              'Photo EXIF stripping',
-              'mwavuli strips location and camera metadata from photos before '
-              'upload and again on the server. This cannot be turned off.',
+          groupTitle('Account & Credentials', Icons.manage_accounts_outlined),
+          _cardGroup([
+            _SettingRow(
+              Icons.badge_outlined,
+              'Edit Public Profile',
+              'Display name, bio, location, avatar photo',
+              () => _editProfile(context, profile),
             ),
-          ),
-          _SettingRow(
-            Icons.shield_outlined,
-            'My reports',
-            'Content you have flagged for review',
-            () => _showReportsSheet(context),
-          ),
-          group('Data & account (GDPR)'),
-          _SettingRow(
-            Icons.download_outlined,
-            'Export my data',
-            'Download everything as JSON or CSV',
-            () => _exportData(context),
-          ),
-          _SettingRow(
-            Icons.sync_rounded,
-            'Offline & sync',
-            'Encrypted on-device cache · $queued queued',
-            () => _showSyncSheet(context),
-          ),
-          _SettingRow(Icons.delete_outline_rounded, 'Delete account',
-              'Full data purge within 30 days', () => _confirmDelete(context),
-              danger: true),
-          group('Session'),
-          _SettingRow(Icons.logout_rounded, 'Log out',
-              'Sign out of this device', () => _logout(context)),
+            _SettingRow(
+              Icons.key_outlined,
+              'Account Credentials',
+              'Username, email address, password',
+              () => _editCredentials(context, profile),
+              isLast: true,
+            ),
+          ]),
+          groupTitle('Accessibility & Display', Icons.accessibility_new_rounded),
+          _cardGroup([
+            _SwitchRow(
+              icon: Icons.text_fields_rounded,
+              title: 'Larger text',
+              subtitle: 'Scale UI text up (WCAG 1.4.4)',
+              value: ref.watch(largeTextProvider),
+              onChanged: (v) => ref.read(largeTextProvider.notifier).state = v,
+            ),
+            _SwitchRow(
+              icon: Icons.contrast_rounded,
+              title: 'High contrast',
+              subtitle: 'Stronger colour contrast',
+              value: ref.watch(highContrastProvider),
+              onChanged: (v) => ref.read(highContrastProvider.notifier).state = v,
+            ),
+            _SwitchRow(
+              icon: Icons.wifi_off_rounded,
+              title: 'Simulate offline',
+              subtitle: 'Force offline mode for testing sync',
+              value: ref.watch(simulateOfflineProvider),
+              onChanged: (v) => ref.read(simulateOfflineProvider.notifier).state = v,
+              isLast: true,
+            ),
+          ]),
+          groupTitle('Privacy & Location', Icons.shield_outlined),
+          _cardGroup([
+            _SwitchRow(
+              icon: Icons.place_outlined,
+              title: 'Default to fuzzy location',
+              subtitle: 'New tree logs publish ±500 m by default',
+              value: defaultFuzzy,
+              onChanged: fuzzyAsync.isLoading
+                  ? null
+                  : (v) => ref.read(defaultFuzzyLocationProvider.notifier).set(v),
+            ),
+            _SettingRow(
+              Icons.lock_outline_rounded,
+              'Photo EXIF stripping',
+              'GPS removed on-device and on server · Always on',
+              () => _showInfoDialog(
+                context,
+                'Photo EXIF stripping',
+                'mwavuli strips location and camera metadata from photos before '
+                'upload and again on the server. This cannot be turned off.',
+              ),
+            ),
+            _SettingRow(
+              Icons.flag_outlined,
+              'My reports',
+              'Content you have flagged for review',
+              () => _showReportsSheet(context),
+              isLast: true,
+            ),
+          ]),
+          groupTitle('Data & Storage (GDPR)', Icons.folder_zip_outlined),
+          _cardGroup([
+            _SettingRow(
+              Icons.download_outlined,
+              'Export my data',
+              'Download everything as JSON or CSV (GDPR Art. 20)',
+              () => _exportData(context),
+            ),
+            _SettingRow(
+              Icons.sync_rounded,
+              'Offline & sync queue',
+              'Encrypted SQLite storage · $queued queued',
+              () => _showSyncSheet(context),
+            ),
+            _SettingRow(
+              Icons.delete_outline_rounded,
+              'Delete account',
+              'Full data purge within 30 days',
+              () => _confirmDelete(context),
+              danger: true,
+              isLast: true,
+            ),
+          ]),
+          groupTitle('Session', Icons.account_circle_outlined),
+          _cardGroup([
+            _SettingRow(
+              Icons.logout_rounded,
+              'Log out',
+              'Sign out of this device',
+              () => _logout(context),
+              isLast: true,
+            ),
+          ]),
         ],
       ),
+    );
+  }
+
+  Widget _cardGroup(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x1F241D14)),
+      ),
+      child: Column(children: children),
     );
   }
 
@@ -639,7 +975,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Palette.cream50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (_) => _EditProfileSheet(profile: profile),
     );
     if (!context.mounted) return;
@@ -647,7 +988,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     ref.invalidate(profileProvider);
     if (saved == true) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Profile updated'),
+          content: Text('Profile updated successfully'),
+          behavior: SnackBarBehavior.floating));
+    }
+  }
+
+  Future<void> _editCredentials(BuildContext context, MeProfile profile) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Palette.cream50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _EditCredentialsSheet(profile: profile),
+    );
+    if (!context.mounted) return;
+
+    ref.invalidate(profileProvider);
+    if (saved == true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Account credentials updated successfully'),
           behavior: SnackBarBehavior.floating));
     }
   }
@@ -660,7 +1023,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     await Clipboard.setData(ClipboardData(text: text));
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Profile summary copied'),
+        content: Text('Profile summary copied to clipboard'),
         behavior: SnackBarBehavior.floating));
   }
 
@@ -700,15 +1063,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               style: Theme.of(ctx).textTheme.titleMedium),
                         ),
                         Text('${items.length}',
-                            style:
-                                TextStyle(color: ctx.earth.ink3, fontSize: 13)),
+                            style: TextStyle(color: ctx.earth.ink3, fontSize: 13, fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
                   if (items.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Text('No one here yet.'),
+                      child: Text('No users found in this list yet.'),
                     )
                   else
                     Expanded(
@@ -725,11 +1087,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               backgroundColor: Palette.green600,
                               child: Text(
                                 name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                style: const TextStyle(color: Colors.white),
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                               ),
                             ),
                             title: Text(name,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                             subtitle: Text('@$handle',
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                           );
@@ -787,13 +1149,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('My reports',
-                        style: Theme.of(ctx).textTheme.titleMedium),
+                    Text('My reports', style: Theme.of(ctx).textTheme.titleMedium),
                     const SizedBox(height: 12),
                     if (items.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Text('You have not filed any reports.'),
+                        child: Text('You have not filed any content reports.'),
                       )
                     else
                       Expanded(
@@ -859,11 +1220,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Offline sync', style: Theme.of(ctx).textTheme.titleMedium),
+                    Text('Offline Sync Queue', style: Theme.of(ctx).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     Text(
                       queued == 0
-                          ? 'No tree logs waiting to upload.'
+                          ? 'All tree logs are synced to the server.'
                           : '$queued tree log${queued == 1 ? '' : 's'} queued on this device.',
                       style: TextStyle(fontSize: 14, color: ctx.earth.ink2),
                     ),
@@ -878,14 +1239,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       ref.read(apiClientProvider),
                                       ref.read(uploadServiceProvider),
                                       ref.read(photoCacheProvider),
+                                      localStore: ref.read(localTreeStoreProvider),
                                     );
                                 ref.invalidate(syncQueueCountProvider);
                                 ref.invalidate(profileProvider);
+                                ref.invalidate(feedProvider);
+                                ref.invalidate(mapFeedProvider);
+                                ref.invalidate(exploreProvider);
+                                ref.invalidate(exploreFeedProvider);
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text('Sync completed'),
+                                          content: Text('Sync completed successfully'),
                                           behavior: SnackBarBehavior.floating));
                                 }
                               } catch (_) {
@@ -893,7 +1259,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text('Sync failed'),
+                                          content: Text('Sync failed. Please check connection.'),
                                           behavior: SnackBarBehavior.floating));
                                 }
                               }
@@ -907,7 +1273,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Sync now'),
+                          : const Text('Sync Now'),
                     ),
                   ],
                 ),
@@ -951,7 +1317,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         await file.writeAsString(content);
         return file;
       } catch (_) {
-        // Continue to next directory if permission denied on Scoped Storage
         continue;
       }
     }
@@ -1115,7 +1480,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 label: Text('Save .$format ...'.toUpperCase()),
                 onPressed: () async {
                   try {
-                    await SharePlus.instance.share(
+                    // ignore: deprecated_member_use
+                    await Share.shareXFiles(
                       [XFile(file.path)],
                       text: 'Mwavuli GDPR Data Export ($filename)',
                     );
@@ -1165,7 +1531,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _logout(BuildContext context) async {
-    // Capture router before await — auth flip rebuilds this route to a spinner.
     final router = GoRouter.of(context);
     await ref.read(authControllerProvider.notifier).logout();
     router.go('/welcome');
@@ -1218,14 +1583,8 @@ class _ProfileAvatar extends StatelessWidget {
     this.avatarUrlOverride,
   });
   final MeProfile profile;
-
-  /// When set, shows initials from this name instead of [profile.displayName].
   final String? previewName;
-
-  /// Local preview while a new avatar is uploading.
   final Uint8List? previewBytes;
-
-  /// Server avatar URL after upload completes (overrides [profile.avatarUrl]).
   final String? avatarUrlOverride;
 
   String get _initials {
@@ -1242,29 +1601,29 @@ class _ProfileAvatar extends StatelessWidget {
     final showRemote =
         previewBytes == null && previewName == null && remoteUrl != null && remoteUrl.isNotEmpty;
     return CircleAvatar(
-      radius: 40,
+      radius: 42,
       backgroundColor: Colors.white,
       child: previewBytes != null
           ? CircleAvatar(
-              radius: 36,
+              radius: 38,
               backgroundColor: Palette.green600,
               backgroundImage: MemoryImage(previewBytes!),
             )
           : showRemote
               ? CircleAvatar(
-                  radius: 36,
+                  radius: 38,
                   backgroundColor: Palette.green600,
                   backgroundImage: NetworkImage(remoteUrl),
                   onBackgroundImageError: (_, __) {},
                 )
               : CircleAvatar(
-                  radius: 36,
-                  backgroundColor: Palette.green600,
+                  radius: 38,
+                  backgroundColor: Palette.green700,
                   child: Text(
                     _initials,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 26,
+                      fontSize: 28,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'RobotoSlab',
                     ),
@@ -1353,7 +1712,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
         return;
       }
       _locCtrl.text = label;
-      _focusScopeUnfocus();
+      FocusScope.of(context).unfocus();
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Could not look up your location.');
@@ -1361,10 +1720,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     } finally {
       if (mounted) setState(() => _locating = false);
     }
-  }
-
-  void _focusScopeUnfocus() {
-    FocusScope.of(context).unfocus();
   }
 
   Future<void> _changeAvatar() async {
@@ -1389,13 +1744,13 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take photo'),
+              leading: const Icon(Icons.photo_camera_outlined, color: Palette.green700),
+              title: const Text('Take photo', style: TextStyle(fontWeight: FontWeight.w600)),
               onTap: () => Navigator.pop(ctx, false),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from gallery'),
+              leading: const Icon(Icons.photo_library_outlined, color: Palette.green700),
+              title: const Text('Choose from gallery', style: TextStyle(fontWeight: FontWeight.w600)),
               onTap: () => Navigator.pop(ctx, true),
             ),
             const SizedBox(height: 8),
@@ -1455,179 +1810,598 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
     final earth = context.earth;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.92,
-        ),
-        decoration: const BoxDecoration(
-          color: Palette.cream50,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: earth.line,
-                  borderRadius: BorderRadius.circular(999),
-                ),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        maxWidth: 560,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: earth.line,
+                borderRadius: BorderRadius.circular(999),
               ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('Edit profile',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Update how you appear to the community.',
-                        style: TextStyle(fontSize: 14, color: earth.ink2),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 14, 6),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: const BoxDecoration(
+                      color: Palette.green50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.edit_outlined, size: 18, color: Palette.green700),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Edit Profile',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontFamily: 'RobotoSlab',
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Palette.green900,
+                          ),
+                        ),
+                        Text(
+                          'Update public profile details & photo',
+                          style: TextStyle(fontSize: 12, color: earth.ink3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, color: earth.ink3, size: 20),
+                    onPressed: () => Navigator.pop(context, false),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, indent: 18, endIndent: 18),
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+                padding: EdgeInsets.fromLTRB(18, 14, 18, 16 + bottomInset),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Compact Profile Header & Avatar Card
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0x1F241D14)),
                       ),
-                      const SizedBox(height: 22),
-                      Center(
-                        child: Column(
-                          children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                _ProfileAvatar(
-                                  profile: widget.profile,
-                                  previewName: _pendingAvatarBytes == null
-                                      ? _nameCtrl.text
-                                      : null,
-                                  previewBytes: _pendingAvatarBytes,
-                                  avatarUrlOverride: _avatarUrlOverride,
-                                ),
-                                Positioned(
-                                  right: -2,
-                                  bottom: -2,
-                                  child: Material(
-                                    color: Palette.cream50,
-                                    elevation: 2,
-                                    shadowColor: Colors.black26,
-                                    shape: const CircleBorder(
-                                      side: BorderSide(
-                                        color: Palette.green700,
-                                        width: 1.5,
-                                      ),
-                                    ),
-                                    child: InkWell(
-                                      customBorder: const CircleBorder(),
-                                      onTap: (_loading || _avatarUploading)
-                                          ? null
-                                          : _changeAvatar,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(9),
-                                        child: _avatarUploading
-                                            ? SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: earth.ink3,
-                                                ),
-                                              )
-                                            : const Icon(
-                                                Icons.camera_alt_outlined,
-                                                size: 18,
-                                                color: Palette.green700,
+                      child: Row(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              _ProfileAvatar(
+                                profile: widget.profile,
+                                previewName: _pendingAvatarBytes == null
+                                    ? _nameCtrl.text
+                                    : null,
+                                previewBytes: _pendingAvatarBytes,
+                                avatarUrlOverride: _avatarUrlOverride,
+                              ),
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Material(
+                                  color: Palette.green700,
+                                  elevation: 2,
+                                  shadowColor: Colors.black26,
+                                  shape: const CircleBorder(
+                                    side: BorderSide(color: Colors.white, width: 2),
+                                  ),
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: (_loading || _avatarUploading)
+                                        ? null
+                                        : _changeAvatar,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(7),
+                                      child: _avatarUploading
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
                                               ),
-                                      ),
+                                            )
+                                          : const Icon(
+                                              Icons.camera_alt_rounded,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.profile.displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Palette.green900,
+                                  ),
+                                ),
+                                Text(
+                                  widget.profile.handle,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Palette.green700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                InkWell(
+                                  onTap: (_loading || _avatarUploading) ? null : _changeAvatar,
+                                  child: const Text(
+                                    'Change Photo',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Palette.green800,
+                                      decoration: TextDecoration.underline,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
-                            Text(
-                              widget.profile.handle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: earth.ink3,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Form Inputs Card
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0x1F241D14)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _ProfileFormLabel('Display Name'),
+                          _ProfileFormField(
+                            controller: _nameCtrl,
+                            hint: 'How your name appears on your tree logs',
+                            icon: Icons.badge_outlined,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
+                          ),
+                          const SizedBox(height: 12),
+                          const _ProfileFormLabel('Bio'),
+                          _ProfileFormField(
+                            controller: _bioCtrl,
+                            hint: 'Share what trees or places you love mapping',
+                            icon: Icons.notes_outlined,
+                            maxLines: 2,
+                            maxLength: 500,
+                            textInputAction: TextInputAction.newline,
+                          ),
+                          const SizedBox(height: 12),
+                          const _ProfileFormLabel('Location'),
+                          LocationAutocompleteField(
+                            controller: _locCtrl,
+                            enabled: !_loading,
+                            locating: _locating,
+                            onUseCurrentLocation: _useCurrentLocation,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Palette.danger.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Palette.danger.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded, size: 16, color: Palette.danger),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(color: Palette.danger, fontSize: 12.5, fontWeight: FontWeight.w500),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Username cannot be changed',
-                              style: TextStyle(fontSize: 11.5, color: earth.ink3),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      const _ProfileFormLabel('Display name'),
-                      _ProfileFormField(
-                        controller: _nameCtrl,
-                        hint: 'How your name appears on your logs',
-                        icon: Icons.badge_outlined,
-                        textCapitalization: TextCapitalization.words,
-                        textInputAction: TextInputAction.next,
-                      ),
-                      const SizedBox(height: 16),
-                      const _ProfileFormLabel('Bio'),
-                      _ProfileFormField(
-                        controller: _bioCtrl,
-                        hint: 'Share what trees or places you love mapping',
-                        icon: Icons.notes_outlined,
-                        maxLines: 4,
-                        maxLength: 500,
-                        textInputAction: TextInputAction.newline,
-                      ),
-                      const SizedBox(height: 16),
-                      const _ProfileFormLabel('Location'),
-                      LocationAutocompleteField(
-                        controller: _locCtrl,
-                        enabled: !_loading,
-                        locating: _locating,
-                        onUseCurrentLocation: _useCurrentLocation,
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_error!,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Palette.danger, fontSize: 13)),
-                      ],
-                      const SizedBox(height: 22),
-                      ElevatedButton(
-                        onPressed: _loading ? null : _save,
-                        child: _loading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Save changes'),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton(
-                        onPressed:
-                            _loading ? null : () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
-                      ),
                     ],
-                  ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _loading ? null : () => Navigator.pop(context, false),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 44),
+                              side: BorderSide(color: earth.line, width: 1.5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: _loading ? null : _save,
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size(0, 44),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Save Changes',
+                                    style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _EditCredentialsSheet extends ConsumerStatefulWidget {
+  const _EditCredentialsSheet({required this.profile});
+  final MeProfile profile;
+
+  @override
+  ConsumerState<_EditCredentialsSheet> createState() => _EditCredentialsSheetState();
+}
+
+class _EditCredentialsSheetState extends ConsumerState<_EditCredentialsSheet> {
+  late final TextEditingController _usernameCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _currentPassCtrl;
+  late final TextEditingController _newPassCtrl;
+  late final TextEditingController _confirmPassCtrl;
+
+  bool _loading = false;
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameCtrl = TextEditingController(text: widget.profile.username);
+    _emailCtrl = TextEditingController(text: widget.profile.email);
+    _currentPassCtrl = TextEditingController();
+    _newPassCtrl = TextEditingController();
+    _confirmPassCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
+    _currentPassCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmPassCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final username = _usernameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final currentPass = _currentPassCtrl.text;
+    final newPass = _newPassCtrl.text;
+    final confirmPass = _confirmPassCtrl.text;
+
+    if (currentPass.isEmpty) {
+      setState(() => _error = 'Please enter your current password to authorize changes.');
+      return;
+    }
+    if (username.isEmpty || username.length < 3) {
+      setState(() => _error = 'Username must be at least 3 characters long.');
+      return;
+    }
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _error = 'Please enter a valid email address.');
+      return;
+    }
+    if (newPass.isNotEmpty) {
+      if (newPass.length < 8) {
+        setState(() => _error = 'New password must be at least 8 characters long.');
+        return;
+      }
+      if (newPass != confirmPass) {
+        setState(() => _error = 'New password and confirm password do not match.');
+        return;
+      }
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(profileRepositoryProvider).updateCredentials(
+            username: username != widget.profile.username ? username : null,
+            email: email != widget.profile.email ? email : null,
+            currentPassword: currentPass,
+            newPassword: newPass.isNotEmpty ? newPass : null,
+          );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = authErrorMessage(e);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final earth = context.earth;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        maxWidth: 560,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: earth.line,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 14, 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: const BoxDecoration(
+                              color: Palette.green50,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.key_outlined, size: 18, color: Palette.green700),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Account Credentials',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontFamily: 'RobotoSlab',
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: Palette.green900,
+                                  ),
+                                ),
+                                Text(
+                                  'Update username, email, or password',
+                                  style: TextStyle(fontSize: 12, color: earth.ink3),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close_rounded, color: earth.ink3, size: 20),
+                            onPressed: () => Navigator.pop(context, false),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 18, endIndent: 18),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+                        padding: EdgeInsets.fromLTRB(18, 14, 18, 16 + bottomInset),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0x1F241D14)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const _ProfileFormLabel('Username'),
+                                  _ProfileFormField(
+                                    controller: _usernameCtrl,
+                                    hint: 'Your unique @handle',
+                                    icon: Icons.alternate_email_rounded,
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const _ProfileFormLabel('Email Address'),
+                                  _ProfileFormField(
+                                    controller: _emailCtrl,
+                                    hint: 'your.email@example.com',
+                                    icon: Icons.email_outlined,
+                                    keyboardType: TextInputType.emailAddress,
+                                    textInputAction: TextInputAction.next,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const _ProfileFormLabel('New Password (Optional)'),
+                                  _ProfileFormField(
+                                    controller: _newPassCtrl,
+                                    hint: 'Leave blank to keep current password',
+                                    icon: Icons.lock_outline_rounded,
+                                    obscureText: _obscureNew,
+                                    textInputAction: TextInputAction.next,
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+                                      onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const _ProfileFormLabel('Confirm New Password'),
+                                  _ProfileFormField(
+                                    controller: _confirmPassCtrl,
+                                    hint: 'Re-enter new password',
+                                    icon: Icons.lock_reset_rounded,
+                                    obscureText: _obscureConfirm,
+                                    textInputAction: TextInputAction.next,
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+                                      onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 14),
+                                  const _ProfileFormLabel('Current Password (Required)'),
+                                  _ProfileFormField(
+                                    controller: _currentPassCtrl,
+                                    hint: 'Required to authorize changes',
+                                    icon: Icons.security_rounded,
+                                    obscureText: _obscureCurrent,
+                                    textInputAction: TextInputAction.done,
+                                    onSubmitted: (_) => _save(),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_obscureCurrent ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+                                      onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_error != null) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Palette.danger.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Palette.danger.withValues(alpha: 0.2)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.error_outline_rounded, size: 16, color: Palette.danger),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _error!,
+                                        style: const TextStyle(color: Palette.danger, fontSize: 12.5, fontWeight: FontWeight.w500),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _loading ? null : () => Navigator.pop(context, false),
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 44),
+                                      side: BorderSide(color: earth.line, width: 1.5),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 2,
+                                  child: ElevatedButton(
+                                    onPressed: _loading ? null : _save,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Palette.green700,
+                                      foregroundColor: Colors.white,
+                                      minimumSize: const Size(0, 44),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    child: _loading
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Text(
+                                            'Update Credentials',
+                                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                                          ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
       ),
     );
   }
@@ -1660,6 +2434,10 @@ class _ProfileFormField extends StatelessWidget {
     this.maxLength,
     this.textCapitalization = TextCapitalization.none,
     this.textInputAction,
+    this.obscureText = false,
+    this.keyboardType,
+    this.suffixIcon,
+    this.onSubmitted,
   });
 
   final TextEditingController controller;
@@ -1669,11 +2447,14 @@ class _ProfileFormField extends StatelessWidget {
   final int? maxLength;
   final TextCapitalization textCapitalization;
   final TextInputAction? textInputAction;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
     final earth = context.earth;
-    // Multi-line fields (bio) should not use the theme pill radius.
     final radius = BorderRadius.circular(maxLines > 1 ? 12 : Dims.radiusPill);
     final border = OutlineInputBorder(
       borderRadius: radius,
@@ -1683,6 +2464,10 @@ class _ProfileFormField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       maxLength: maxLength,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      scrollPadding: const EdgeInsets.all(24),
+      onSubmitted: onSubmitted,
       textCapitalization: textCapitalization,
       textInputAction: textInputAction,
       style: const TextStyle(fontSize: 15, color: Palette.ink),
@@ -1704,6 +2489,7 @@ class _ProfileFormField extends StatelessWidget {
                 child: Icon(icon, size: 20, color: Palette.green700),
               ),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+        suffixIcon: suffixIcon,
         border: border,
         enabledBorder: border,
         focusedBorder: OutlineInputBorder(
@@ -1727,72 +2513,69 @@ class _ContributionsChart extends StatelessWidget {
     final hasLogs = maxCount > 0;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0x24241D14))),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x1F241D14)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Expanded(
-                child: Text('Trees logged',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
+              Expanded(
                 child: Text(
-                  'last 6 months',
+                  'Trees Logged Activity',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    fontSize: MediaQuery.sizeOf(context).width < 340 ? 10.5 : 11.5,
-                    color: const Color(0xFF77694F),
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Palette.green900),
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Last 6 months',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF77694F),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
           if (!hasLogs)
-            const Text('No logs in the last 6 months.',
-                style: TextStyle(fontSize: 12, color: Color(0xFF77694F))),
-          LayoutBuilder(
-              builder: (context, constraints) {
-                final barWidth =
-                    (constraints.maxWidth / data.length * 0.5).clamp(8.0, 22.0);
-                final monthSize =
-                    constraints.maxWidth < 320 ? 9.0 : 10.5;
-                final aspect = constraints.maxWidth < 340 ? 2.5 : 2.85;
-
-                return AspectRatio(
-                  aspectRatio: aspect,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final d in data)
-                        Expanded(
-                          child: _ContributionMonthColumn(
-                            month: d.month,
-                            monthSize: monthSize,
-                            count: d.count,
-                            scaleMax: scaleMax,
-                            barWidth: barWidth,
-                            isPeak: d.count == maxCount && d.count > 0,
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
+            const Text(
+              'No tree logs in the last 6 months.',
+              style: TextStyle(fontSize: 12.5, color: Color(0xFF77694F)),
             ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final barWidth = (constraints.maxWidth / data.length * 0.45).clamp(8.0, 22.0);
+              final monthSize = constraints.maxWidth < 320 ? 9.5 : 11.0;
+              final aspect = constraints.maxWidth < 340 ? 2.5 : 2.85;
+
+              return AspectRatio(
+                aspectRatio: aspect,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final d in data)
+                      Expanded(
+                        child: _ContributionMonthColumn(
+                          month: d.month,
+                          monthSize: monthSize,
+                          count: d.count,
+                          scaleMax: scaleMax,
+                          barWidth: barWidth,
+                          isPeak: d.count == maxCount && d.count > 0,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1818,15 +2601,13 @@ class _ContributionMonthColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final monthBand = (MediaQuery.textScalerOf(context).scale(monthSize) + 4)
-        .clamp(12.0, 24.0);
+    final monthBand = (MediaQuery.textScalerOf(context).scale(monthSize) + 4).clamp(12.0, 24.0);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final plotHeight =
-              (constraints.maxHeight - monthBand).clamp(0.0, constraints.maxHeight);
+          final plotHeight = (constraints.maxHeight - monthBand).clamp(0.0, constraints.maxHeight);
 
           return Stack(
             clipBehavior: Clip.hardEdge,
@@ -1911,7 +2692,7 @@ class _ContributionBar extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: isPeak ? Palette.green700 : Palette.green500,
                         borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
+                          top: Radius.circular(6),
                         ),
                       ),
                     ),
@@ -1957,54 +2738,74 @@ class _ContributionBar extends StatelessWidget {
 }
 
 class _SettingRow extends StatelessWidget {
-  const _SettingRow(this.icon, this.title, this.subtitle, this.onTap,
-      {this.danger = false});
+  const _SettingRow(
+    this.icon,
+    this.title,
+    this.subtitle,
+    this.onTap, {
+    this.danger = false,
+    this.isLast = false,
+  });
+
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
   final bool danger;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
     final color = danger ? Palette.danger : Palette.green700;
     return InkWell(
       onTap: onTap,
+      borderRadius: isLast
+          ? const BorderRadius.vertical(bottom: Radius.circular(16))
+          : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: Color(0x18241D14)))),
-        child: Row(children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          border: isLast ? null : const Border(bottom: BorderSide(color: Color(0x18241D14))),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
                 color: danger ? const Color(0xFFF6E0DA) : Palette.green50,
-                borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, size: 19, color: color),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    maxLines: 2,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 19, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: danger ? Palette.danger : Palette.ink)),
-                Text(subtitle,
-                    maxLines: 2,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: danger ? Palette.danger : Palette.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 11.5, color: Color(0xFF77694F))),
-              ],
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF77694F)),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: Color(0xFF77694F)),
-        ]),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF77694F), size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -2017,47 +2818,58 @@ class _SwitchRow extends StatelessWidget {
     required this.subtitle,
     required this.value,
     required this.onChanged,
+    this.isLast = false,
   });
+
   final IconData icon;
   final String title;
   final String subtitle;
   final bool value;
   final ValueChanged<bool>? onChanged;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0x18241D14)))),
-      child: Row(children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-              color: Palette.green50, borderRadius: BorderRadius.circular(10)),
-          child: Icon(icon, size: 19, color: Palette.green700),
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
-              Text(subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 11.5, color: Color(0xFF77694F))),
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        border: isLast ? null : const Border(bottom: BorderSide(color: Color(0x18241D14))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Palette.green50,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: Palette.green700),
           ),
-        ),
-        Switch(value: value, onChanged: onChanged),
-      ]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Palette.ink),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF77694F)),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
     );
   }
 }

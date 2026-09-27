@@ -66,6 +66,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         bottom: false,
         child: Column(

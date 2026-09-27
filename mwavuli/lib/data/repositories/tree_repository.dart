@@ -74,7 +74,7 @@ class TreeRepository {
         radiusM: radiusM,
       );
       for (final t in items) {
-        await _local.upsert(t);
+        await _local.upsert(t, fromServer: true);
       }
     } catch (_) {
       if (before != null) rethrow;
@@ -95,22 +95,24 @@ class TreeRepository {
   }
 
   Future<Tree?> byId(String id) async {
+    final targetId = _local.resolveId(id);
     try {
-      final detail = await _api.fetchTreeDetail(id);
-      await _local.upsert(detail.tree);
+      final detail = await _api.fetchTreeDetail(targetId);
+      await _local.upsert(detail.tree, fromServer: true);
       return detail.tree;
     } catch (_) {
-      return _local.byId(id);
+      return _local.byId(targetId);
     }
   }
 
   Future<TreeDetail?> detailById(String id) async {
+    final targetId = _local.resolveId(id);
     try {
-      final detail = await _api.fetchTreeDetail(id);
-      await _local.upsert(detail.tree);
+      final detail = await _api.fetchTreeDetail(targetId);
+      await _local.upsert(detail.tree, fromServer: true);
       return detail;
     } catch (_) {
-      final tree = await _local.byId(id);
+      final tree = await _local.byId(targetId);
       if (tree == null) return null;
       return TreeDetail(tree: tree);
     }
@@ -136,11 +138,11 @@ class TreeRepository {
   Future<List<Tree>> saved() => _api.fetchSavedTrees();
 
   /// Persist a freshly captured tree locally (the sync queue uploads later).
-  Future<void> saveLocal(Tree tree) => _local.upsert(tree);
+  Future<void> saveLocal(Tree tree) => _local.upsert(tree, fromServer: false);
 
   Future<Tree> updateTree(String treeId, Map<String, dynamic> body) async {
     final updated = await _api.updateTree(treeId, body);
-    await _local.upsert(updated);
+    await _local.upsert(updated, fromServer: true);
     return updated;
   }
 

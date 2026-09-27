@@ -296,7 +296,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
           ),
 
-        Positioned(left: 14, bottom: 0, child: const SafeArea(
+        const Positioned(left: 14, bottom: 0, child: SafeArea(
           minimum: EdgeInsets.only(bottom: 24),
           child: _Legend(),
         )),

@@ -5,16 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/upload_service.dart';
 import '../../features/auth/auth_controller.dart';
+import '../local/drift_tree_store.dart';
 import '../models/profile.dart';
 
 class ProfileRepository {
-  ProfileRepository(this._api, this._upload);
+  ProfileRepository(this._api, this._upload, this._local);
   final ApiClient _api;
   final UploadService _upload;
+  final LocalTreeStore _local;
 
-  Future<ProfileData> fetchMe() async {
-    final data = await _api.fetchMe();
-    return ProfileData.fromApi(data);
+  Future<ProfileData?> fetchMe() async {
+    try {
+      final data = await _api.fetchMe();
+      final profileData = ProfileData.fromApi(data);
+      // Persist user info in SQLite database (from_server = true)
+      await _local.saveUser(profileData, fromServer: true);
+      return profileData;
+    } catch (_) {
+      // Offline fallback: load user info from SQLite database
+      return await _local.getCachedUser();
+    }
   }
 
   Future<MeProfile> updateMe({
@@ -27,11 +37,66 @@ class ProfileRepository {
       bio: bio,
       locationLabel: locationLabel,
     );
-    final profile = (data['profile'] as Map?)?.cast<String, dynamic>();
-    if (profile == null) {
-      return (await fetchMe()).profile;
+    final profileMap = (data['profile'] as Map?)?.cast<String, dynamic>();
+    if (profileMap == null) {
+      final updated = await fetchMe();
+      return updated!.profile;
     }
-    return MeProfile.fromApi(profile);
+    final meProfile = MeProfile.fromApi(profileMap);
+    final current = await _local.getCachedUser();
+    if (current != null) {
+      final updatedProfileData = ProfileData(
+        profile: meProfile,
+        following: current.following,
+        followers: current.followers,
+        treeCount: current.treeCount,
+        speciesCount: current.speciesCount,
+        points: current.points,
+        badges: current.badges,
+        trees: current.trees,
+        topSpecies: current.topSpecies,
+        contributions: current.contributions,
+      );
+      await _local.saveUser(updatedProfileData, fromServer: true);
+    }
+    return meProfile;
+  }
+
+  Future<MeProfile> updateCredentials({
+    String? username,
+    String? email,
+    required String currentPassword,
+    String? newPassword,
+  }) async {
+    final data = await _api.updateCredentials(
+      username: username,
+      email: email,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    final profileMap = (data['profile'] as Map?)?.cast<String, dynamic>();
+    if (profileMap == null) {
+      final updated = await fetchMe();
+      return updated!.profile;
+    }
+    final meProfile = MeProfile.fromApi(profileMap);
+    final current = await _local.getCachedUser();
+    if (current != null) {
+      final updatedProfileData = ProfileData(
+        profile: meProfile,
+        following: current.following,
+        followers: current.followers,
+        treeCount: current.treeCount,
+        speciesCount: current.speciesCount,
+        points: current.points,
+        badges: current.badges,
+        trees: current.trees,
+        topSpecies: current.topSpecies,
+        contributions: current.contributions,
+      );
+      await _local.saveUser(updatedProfileData, fromServer: true);
+    }
+    return meProfile;
   }
 
   /// PUT avatar bytes to S3, then poll until the pipeline sets avatarUrl.
@@ -48,12 +113,9 @@ class ProfileRepository {
 
     for (var i = 0; i < 20; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 750));
-      final data = await _api.fetchMe();
-      final profile =
-          (data['profile'] as Map?)?.cast<String, dynamic>();
-      final url = profile?['avatarUrl'] as String?;
-      if (url != null && url.isNotEmpty) {
-        return MeProfile.fromApi(profile!);
+      final profileData = await fetchMe();
+      if (profileData != null && profileData.profile.avatarUrl != null) {
+        return profileData.profile;
       }
     }
     return null;
@@ -64,6 +126,7 @@ final profileRepositoryProvider = Provider(
   (ref) => ProfileRepository(
     ref.watch(apiClientProvider),
     ref.watch(uploadServiceProvider),
+    ref.watch(localTreeStoreProvider),
   ),
 );
 

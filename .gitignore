@@ -21,3 +21,4 @@ dist/
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
+.agents/

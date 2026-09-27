@@ -86,6 +86,7 @@ services:
       S3_BUCKET_PUBLIC: mwavuli-public
       S3_PUBLIC_BASE_URL: http://localhost:9000/mwavuli-public
       VERIFY_VOTES_REQUIRED: "2"
+      SMTP_FROM: '"Mwavuli Support" <support@mwavuli.com>'
     ports: ["8080:8080"]
     depends_on:
       migrate:

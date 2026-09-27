@@ -270,8 +270,8 @@ class _LocationAutocompleteFieldState
     final earth = context.earth;
     return InputDecoration(
       hintText: widget.hintText,
-      prefixIcon: Padding(
-        padding: const EdgeInsets.only(left: 14, right: 10),
+      prefixIcon: const Padding(
+        padding: EdgeInsets.only(left: 14, right: 10),
         child: Icon(Icons.place_outlined, size: 20, color: Palette.green700),
       ),
       prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
@@ -291,7 +291,7 @@ class _LocationAutocompleteFieldState
                         color: earth.ink3,
                       ),
                     )
-                  : Icon(
+                  : const Icon(
                       Icons.my_location,
                       size: 20,
                       color: Palette.green700,
@@ -332,6 +332,7 @@ class _LocationAutocompleteFieldState
           controller: widget.controller,
           focusNode: _focusNode,
           enabled: widget.enabled,
+          scrollPadding: const EdgeInsets.all(24),
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.search,
           onSubmitted: (_) {

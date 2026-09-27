@@ -85,7 +85,8 @@ class Tree {
       (photoStatus == 'pending' || photoStatus == 'failed');
 
   /// The point safe to render on a public map.
-  LatLng? get displayLocation => isFuzzy ? fuzzyLocation : exactLocation;
+  LatLng? get displayLocation =>
+      isFuzzy ? (fuzzyLocation ?? exactLocation) : (exactLocation ?? fuzzyLocation);
 
   Tree copyWith({
     bool? synced,

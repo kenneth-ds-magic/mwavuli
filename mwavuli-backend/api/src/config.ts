@@ -24,6 +24,13 @@ const Env = z.object({
   PLANTNET_ENDPOINT: z
     .string()
     .default('https://my-api.plantnet.org/v2/identify/all'),
+  // SMTP Email Server Config
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_FROM: z.string().default('"Mwavuli Support" <support@mwavuli.com>'),
 });
 
 export const config = Env.parse(process.env);
