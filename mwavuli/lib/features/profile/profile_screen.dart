@@ -1590,45 +1590,44 @@ class _ProfileAvatar extends StatelessWidget {
   String get _initials {
     final name = (previewName ?? profile.displayName).trim();
     if (name.isEmpty) return profile.initials;
-    final first =
-        name.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).first;
-    return first[0].toUpperCase();
+    final parts =
+        name.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
   }
 
   @override
   Widget build(BuildContext context) {
     final remoteUrl = avatarUrlOverride ?? profile.avatarUrl;
-    final showRemote =
-        previewBytes == null && previewName == null && remoteUrl != null && remoteUrl.isNotEmpty;
+    final String? validRemoteUrl =
+        (previewBytes == null && remoteUrl != null && remoteUrl.trim().isNotEmpty)
+            ? remoteUrl
+            : null;
+
+    final ImageProvider? imageProvider = previewBytes != null
+        ? MemoryImage(previewBytes!)
+        : (validRemoteUrl != null ? NetworkImage(validRemoteUrl) : null);
+
     return CircleAvatar(
       radius: 42,
       backgroundColor: Colors.white,
-      child: previewBytes != null
-          ? CircleAvatar(
-              radius: 38,
-              backgroundColor: Palette.green600,
-              backgroundImage: MemoryImage(previewBytes!),
-            )
-          : showRemote
-              ? CircleAvatar(
-                  radius: 38,
-                  backgroundColor: Palette.green600,
-                  backgroundImage: NetworkImage(remoteUrl),
-                  onBackgroundImageError: (_, __) {},
-                )
-              : CircleAvatar(
-                  radius: 38,
-                  backgroundColor: Palette.green700,
-                  child: Text(
-                    _initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'RobotoSlab',
-                    ),
-                  ),
-                ),
+      child: CircleAvatar(
+        radius: 38,
+        backgroundColor: Palette.green700,
+        backgroundImage: imageProvider,
+        onBackgroundImageError: imageProvider != null ? (_, __) {} : null,
+        child: Text(
+          _initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'RobotoSlab',
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1680,16 +1679,28 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       _error = null;
     });
     try {
+      if (_pendingAvatarBytes != null) {
+        setState(() => _avatarUploading = true);
+        try {
+          await ref
+              .read(profileRepositoryProvider)
+              .uploadAvatar(_pendingAvatarBytes!);
+        } catch (_) {}
+      }
+
       await ref.read(profileRepositoryProvider).updateMe(
             displayName: name,
             bio: _bioCtrl.text.trim(),
             locationLabel: _locCtrl.text.trim(),
+            avatarUrl: _pendingAvatarBytes == null ? _avatarUrlOverride : null,
           );
+      ref.invalidate(profileProvider);
       if (mounted) Navigator.pop(context, true);
     } catch (_) {
       if (mounted) {
         setState(() {
           _loading = false;
+          _avatarUploading = false;
           _error = 'Could not save your profile. Check your connection.';
         });
       }
@@ -1759,10 +1770,10 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
       ),
     );
     if (source == null || !mounted) return;
-    await _pickAndUploadAvatar(fromGallery: source);
+    await _pickAvatar(fromGallery: source);
   }
 
-  Future<void> _pickAndUploadAvatar({required bool fromGallery}) async {
+  Future<void> _pickAvatar({required bool fromGallery}) async {
     try {
       final photo = await ref
           .read(photoCaptureProvider)
@@ -1771,36 +1782,12 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
 
       setState(() {
         _pendingAvatarBytes = photo.bytes;
-        _avatarUploading = true;
         _error = null;
       });
-
-      final updated = await ref.read(profileRepositoryProvider).uploadAvatar(
-            photo.bytes,
-            contentType: photo.contentType,
-          );
-
-      if (!mounted) return;
-      setState(() {
-        _avatarUploading = false;
-        if (updated != null) {
-          _avatarUrlOverride = updated.avatarUrl;
-          _pendingAvatarBytes = null;
-        }
-      });
-
-      if (updated != null) {
-        ref.invalidate(profileProvider);
-      } else if (mounted) {
-        setState(() => _error =
-            'Avatar uploaded. It may take a moment to appear everywhere.');
-      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _avatarUploading = false;
-        _pendingAvatarBytes = null;
-        _error = 'Could not upload avatar. Check your connection.';
+        _error = 'Could not pick image from ${fromGallery ? "gallery" : "camera"}.';
       });
     }
   }

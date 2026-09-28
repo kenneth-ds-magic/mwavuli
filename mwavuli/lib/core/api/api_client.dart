@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -382,12 +383,20 @@ class ApiClient {
     String? displayName,
     String? bio,
     String? locationLabel,
+    String? avatarUrl,
   }) async {
     final r = await _dio.patch('/v1/me', data: {
       if (displayName != null) 'displayName': displayName,
       if (bio != null) 'bio': bio.isEmpty ? null : bio,
       if (locationLabel != null)
         'locationLabel': locationLabel.isEmpty ? null : locationLabel,
+      if (avatarUrl != null)
+        'avatarUrl': avatarUrl.isEmpty
+            ? null
+            : (avatarUrl.contains('/v1/media/')
+                ? avatarUrl.substring(
+                    avatarUrl.lastIndexOf('/v1/media/') + '/v1/media/'.length)
+                : avatarUrl),
     });
     return (r.data as Map).cast<String, dynamic>();
   }
@@ -405,6 +414,22 @@ class ApiClient {
       if (newPassword != null && newPassword.isNotEmpty)
         'newPassword': newPassword,
     });
+    return (r.data as Map).cast<String, dynamic>();
+  }
+
+  /// Upload avatar raw bytes through API endpoint.
+  Future<Map<String, dynamic>> uploadAvatarBytes(
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
+    final r = await _dio.put(
+      '/v1/me/avatar/upload',
+      data: Stream.value(bytes),
+      options: Options(
+        contentType: contentType,
+        headers: {Headers.contentLengthHeader: bytes.length},
+      ),
+    );
     return (r.data as Map).cast<String, dynamic>();
   }
 

@@ -80,8 +80,16 @@ export function presignDownload(bucket: string, key: string, expiresIn = 900) {
 }
 
 export function publicUrl(key: string, mediaBase?: string): string {
+  if (!key) return '';
+  let cleanKey = key;
+  const idx = cleanKey.lastIndexOf('/v1/media/');
+  if (idx !== -1) {
+    cleanKey = cleanKey.substring(idx + '/v1/media/'.length);
+  } else if (cleanKey.startsWith('http://') || cleanKey.startsWith('https://')) {
+    return cleanKey;
+  }
   const base = (mediaBase ?? config.S3_PUBLIC_BASE_URL).replace(/\/$/, '');
-  return `${base}/${key.replace(/^\//, '')}`;
+  return `${base}/${cleanKey.replace(/^\//, '')}`;
 }
 
 /** Upload bytes to the private bucket (e.g. short-lived identify staging). */

@@ -22,14 +22,18 @@ export async function mediaRoutes(app: FastifyInstance) {
       /^\//,
       '',
     );
-    if (!key || key.includes('..') || !key.startsWith('public/')) {
+    if (!key || key.includes('..') || (!key.startsWith('public/') && !key.startsWith('uploads/'))) {
       throw notFound('Media not found');
     }
+
+    const bucket = key.startsWith('uploads/')
+      ? config.S3_BUCKET_UPLOADS
+      : config.S3_BUCKET_PUBLIC;
 
     try {
       const obj = await s3.send(
         new GetObjectCommand({
-          Bucket: config.S3_BUCKET_PUBLIC,
+          Bucket: bucket,
           Key: key,
         }),
       );

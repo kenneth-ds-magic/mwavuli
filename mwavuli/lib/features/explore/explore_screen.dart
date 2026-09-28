@@ -617,16 +617,14 @@ class _ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (profile != null && profile!.hasAvatar) {
-      return CircleAvatar(
-        radius: 17,
-        backgroundImage: NetworkImage(profile!.avatarUrl!),
-        onBackgroundImageError: (_, __) {},
-      );
-    }
+    final avatarUrl = profile?.avatarUrl;
+    final hasAvatar = avatarUrl != null && avatarUrl.trim().isNotEmpty;
+
     return CircleAvatar(
       radius: 17,
-      backgroundColor: Palette.green500,
+      backgroundColor: Palette.green700,
+      backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
+      onBackgroundImageError: hasAvatar ? (_, __) {} : null,
       child: Text(
         profile?.initials ?? '?',
         style: const TextStyle(

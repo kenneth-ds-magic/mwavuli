@@ -31,11 +31,13 @@ class ProfileRepository {
     String? displayName,
     String? bio,
     String? locationLabel,
+    String? avatarUrl,
   }) async {
     final data = await _api.updateMe(
       displayName: displayName,
       bio: bio,
       locationLabel: locationLabel,
+      avatarUrl: avatarUrl,
     );
     final profileMap = (data['profile'] as Map?)?.cast<String, dynamic>();
     if (profileMap == null) {
@@ -99,26 +101,56 @@ class ProfileRepository {
     return meProfile;
   }
 
-  /// PUT avatar bytes to S3, then poll until the pipeline sets avatarUrl.
+  /// Upload avatar bytes via API, falling back to presigned PUT if needed.
   Future<MeProfile?> uploadAvatar(
     Uint8List bytes, {
     String contentType = 'image/jpeg',
   }) async {
-    final init = await _api.requestAvatarUpload(contentType: contentType);
-    await _upload.putBytes(
-      init['uploadUrl'] as String,
-      bytes,
-      contentType: contentType,
-    );
-
-    for (var i = 0; i < 20; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 750));
-      final profileData = await fetchMe();
-      if (profileData != null && profileData.profile.avatarUrl != null) {
-        return profileData.profile;
+    try {
+      final data = await _api.uploadAvatarBytes(bytes, contentType: contentType);
+      final profileMap = (data['profile'] as Map?)?.cast<String, dynamic>();
+      if (profileMap != null) {
+        final meProfile = MeProfile.fromApi(profileMap);
+        final current = await _local.getCachedUser();
+        if (current != null) {
+          final updatedProfileData = ProfileData(
+            profile: meProfile,
+            following: current.following,
+            followers: current.followers,
+            treeCount: current.treeCount,
+            speciesCount: current.speciesCount,
+            points: current.points,
+            badges: current.badges,
+            trees: current.trees,
+            topSpecies: current.topSpecies,
+            contributions: current.contributions,
+          );
+          await _local.saveUser(updatedProfileData, fromServer: true);
+        }
+        return meProfile;
       }
+    } catch (_) {
+      try {
+        final init = await _api.requestAvatarUpload(contentType: contentType);
+        final uploadUrl = init['uploadUrl'] as String?;
+        final key = init['key'] as String?;
+
+        if (uploadUrl != null && uploadUrl.isNotEmpty) {
+          await _upload.putBytes(
+            uploadUrl,
+            bytes,
+            contentType: contentType,
+          );
+        }
+
+        if (key != null && key.isNotEmpty) {
+          await updateMe(avatarUrl: key);
+        }
+      } catch (_) {}
     }
-    return null;
+
+    final profileData = await fetchMe();
+    return profileData?.profile;
   }
 }
 

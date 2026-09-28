@@ -7,7 +7,8 @@ import { parse } from '../lib/validate';
 import { requireAuth } from '../auth/plugin';
 import { hashPassword, verifyPassword } from '../auth/password';
 import { assembleExport, treesToCsv } from '../services/export';
-import { presignUpload, publicUrl, mediaBaseFromRequest } from '../services/storage';
+import { presignUpload, publicUrl, mediaBaseFromRequest, putPrivateObject } from '../services/storage';
+import { processAvatar } from '../services/image-process';
 import { mapTree, TREE_COLS, TREE_PHOTO_COLS } from './trees';
 
 import { levelFromPoints, levelName } from '../services/gamification';
@@ -16,6 +17,7 @@ const UpdateMe = z.object({
   displayName: z.string().min(1).max(80).optional(),
   bio: z.string().max(500).nullable().optional(),
   locationLabel: z.string().max(120).nullable().optional(),
+  avatarUrl: z.string().max(500).nullable().optional(),
 });
 
 const UpdateCredentials = z.object({
@@ -182,6 +184,17 @@ export async function meRoutes(app: FastifyInstance) {
         params.push(b.locationLabel === '' ? null : b.locationLabel);
         sets.push(`location_label = $${params.length}`);
       }
+      if (b.avatarUrl !== undefined) {
+        let avatarKey = b.avatarUrl === '' ? null : b.avatarUrl;
+        if (avatarKey && typeof avatarKey === 'string') {
+          const idx = avatarKey.lastIndexOf('/v1/media/');
+          if (idx !== -1) {
+            avatarKey = avatarKey.substring(idx + '/v1/media/'.length);
+          }
+        }
+        params.push(avatarKey);
+        sets.push(`avatar_url = $${params.length}`);
+      }
       if (!sets.length) return { profile: null };
 
       params.push(req.principal.userId);
@@ -331,8 +344,7 @@ export async function meRoutes(app: FastifyInstance) {
     }),
   );
 
-  // Presigned PUT for profile avatar. Pipeline writes public/{userId}/avatar/*_480.jpg
-  // and sets users.avatar_url to the thumb key.
+  // Presigned PUT for profile avatar. Returns uploadUrl and storage key.
   app.post('/v1/me/avatar', { preHandler: requireAuth }, async (req) =>
     runAs(req.principal, async () => {
       const b = parse(AvatarUpload, req.body ?? {});
@@ -344,6 +356,40 @@ export async function meRoutes(app: FastifyInstance) {
         key,
       };
     }),
+  );
+
+  // Direct avatar bytes upload through API (reliable on emulators / physical devices)
+  app.put(
+    '/v1/me/avatar/upload',
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 20, timeWindow: 60_000 } },
+    },
+    async (req) => {
+      const buffer = req.body as Buffer | undefined;
+      if (!buffer?.length) throw badRequest('Empty image body');
+      if (buffer.length > 12 * 1024 * 1024) throw badRequest('Image too large');
+
+      const contentType =
+        (req.headers['content-type'] as string | undefined)?.split(';')[0] ??
+        'image/jpeg';
+
+      return runAs(req.principal, async (c) => {
+        const userId = req.principal.userId as string;
+        const key = `uploads/${userId}/avatar/${randomUUID()}.jpg`;
+
+        await putPrivateObject(key, buffer, contentType);
+        await processAvatar(c, key);
+
+        const { rows } = await c.query(
+          `SELECT id, email, username, display_name, bio, avatar_url, role,
+                  points, level, location_label, created_at
+             FROM users WHERE id = $1 AND deleted_at IS NULL`,
+          [userId],
+        );
+        return { profile: mapProfile(rows[0], mediaBaseFromRequest(req)) };
+      });
+    },
   );
 
   // GDPR Art. 20 — data export. Assembled inline for demoability; offload to
