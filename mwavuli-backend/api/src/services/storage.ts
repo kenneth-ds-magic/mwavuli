@@ -23,6 +23,9 @@ function clientHostFromRequest(req?: ReqLike): string | null {
 export function mediaBaseFromRequest(req?: ReqLike): string {
   const host = clientHostFromRequest(req);
   if (host) {
+    const rawProto = req?.headers?.['x-forwarded-proto'];
+    const proto = (Array.isArray(rawProto) ? rawProto[0] : rawProto)?.trim() || 'http';
+    const scheme = proto === 'https' ? 'https' : 'http';
     const rawPrefix = req?.headers?.['x-forwarded-prefix'];
     let prefix = (Array.isArray(rawPrefix) ? rawPrefix[0] : rawPrefix)?.replace(/^\/|\/$/g, '') ?? '';
     const rawReferer = req?.headers?.['referer'];
@@ -33,7 +36,7 @@ export function mediaBaseFromRequest(req?: ReqLike): string {
       prefix = 'mwavuli';
     }
     const prefixPath = prefix ? `/${prefix}` : '';
-    return `http://${host}${prefixPath}/v1/media`;
+    return `${scheme}://${host}${prefixPath}/v1/media`;
   }
   return config.S3_PUBLIC_BASE_URL.replace(/\/$/, '');
 }

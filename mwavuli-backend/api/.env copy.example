@@ -1,0 +1,50 @@
+# ==============================================================================
+# MWAVULI BACKEND LOCAL DEVELOPMENT ENVIRONMENT CONFIGURATION
+# ==============================================================================
+
+# Server Configuration
+NODE_ENV=development
+PORT=8080
+LOG_LEVEL=debug
+
+# Database (PostgreSQL 16 + PostGIS)
+# Note: If running API on host machine with Docker Postgres mapped port, use port 5433:
+# DATABASE_URL=postgres://mwavuli_app:change-me-in-prod@localhost:5433/mwavuli
+# If running native Postgres on default port 5432:
+DATABASE_URL=postgres://mwavuli_app:change-me-in-prod@localhost:5432/mwavuli
+
+# Authentication & JWT (Access TTL = 15m, Refresh TTL = 30 days)
+JWT_SECRET=dev-secret-key-change-me-in-production-32chars
+JWT_ACCESS_TTL=900
+JWT_REFRESH_TTL=2592000
+
+# Security & CORS (* allowed for dev convenience)
+CORS_ORIGIN=*
+
+# Rate Limiting (Generous for dev testing)
+RATE_LIMIT_MAX=500
+RATE_LIMIT_WINDOW=60000
+
+# Object Storage (Local MinIO S3 Container)
+S3_REGION=us-east-1
+S3_BUCKET_UPLOADS=mwavuli-uploads-private
+S3_BUCKET_PUBLIC=mwavuli-public
+S3_PUBLIC_BASE_URL=http://localhost:8080/v1/media
+S3_ENDPOINT=http://localhost:9000
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+
+VERIFY_VOTES_REQUIRED=2
+
+# AI Species Identification (Pl@ntNet)
+# Leave blank to use fallback mock identification engine in dev
+PLANTNET_API_KEY=
+PLANTNET_ENDPOINT=https://my-api.plantnet.org/v2/identify/all
+
+# SMTP Email Configuration (Optional for dev password reset testing)
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM="Mwavuli Dev <noreply@mwavuli.local>"
