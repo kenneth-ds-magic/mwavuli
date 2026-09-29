@@ -4,6 +4,12 @@ import { config } from '../config';
 let transporter: Transporter | null = null;
 
 if (config.SMTP_HOST && config.SMTP_HOST.trim().length > 0) {
+  const tlsServername =
+    config.SMTP_SERVERNAME ||
+    (config.SMTP_HOST === 'host.docker.internal' || /^\d+\.\d+\.\d+\.\d+$/.test(config.SMTP_HOST)
+      ? 'mail.ds.co.ug'
+      : undefined);
+
   transporter = nodemailer.createTransport({
     host: config.SMTP_HOST,
     port: config.SMTP_PORT,
@@ -15,6 +21,11 @@ if (config.SMTP_HOST && config.SMTP_HOST.trim().length > 0) {
             pass: config.SMTP_PASS,
           }
         : undefined,
+    tls: tlsServername
+      ? {
+          servername: tlsServername,
+        }
+      : undefined,
   });
 }
 

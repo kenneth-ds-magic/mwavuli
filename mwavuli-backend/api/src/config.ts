@@ -31,6 +31,7 @@ const Env = z.object({
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   SMTP_FROM: z.string().default('"Mwavuli Support" <support@mwavuli.com>'),
+  SMTP_SERVERNAME: z.string().default(''),
 });
 
 export const config = Env.parse(process.env);
