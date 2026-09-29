@@ -89,6 +89,7 @@ services:
     ports: ["8080:8080"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "mail.ds.co.ug:host-gateway"
     depends_on:
       migrate:
         condition: service_completed_successfully
