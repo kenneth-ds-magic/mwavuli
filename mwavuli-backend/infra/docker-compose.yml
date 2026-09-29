@@ -86,8 +86,9 @@ services:
       S3_BUCKET_PUBLIC: mwavuli-public
       S3_PUBLIC_BASE_URL: http://localhost:9000/mwavuli-public
       VERIFY_VOTES_REQUIRED: "2"
-      SMTP_FROM: '"Mwavuli Support" <support@mwavuli.com>'
     ports: ["8080:8080"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       migrate:
         condition: service_completed_successfully
